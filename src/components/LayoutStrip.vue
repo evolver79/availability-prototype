@@ -8,6 +8,7 @@ import {
   getLayoutColor,
   toggleEnabled,
   canEnable,
+  isExpired,
 } from '../store/index.js'
 
 const emit = defineEmits(['create'])
@@ -22,23 +23,22 @@ const layouts = computed(() => store.layouts)
         v-for="layout in layouts"
         :key="layout.id"
         @click="selectLayout(layout.id)"
-        class="group flex items-center gap-2 px-3 py-1.5 rounded-lg border cursor-pointer transition-all whitespace-nowrap shrink-0"
+        class="group flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-lg border cursor-pointer transition-all whitespace-nowrap shrink-0"
         :class="[
           selectedLayout?.id === layout.id
-            ? 'border-blue-400 bg-blue-50 shadow-sm'
-            : !layout.enabled && !layout.isDefault
-              ? 'border-gray-200 bg-gray-100 opacity-60 hover:opacity-80'
-              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50',
+            ? 'border-blue bg-blue-light shadow-sm'
+            : isExpired(layout)
+              ? 'border-red-200 bg-red-50 opacity-70 hover:opacity-90'
+              : !layout.enabled && !layout.isDefault
+                ? 'border-gray-200 bg-gray-100 opacity-60 hover:opacity-80'
+                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50',
         ]"
       >
-        <div
-          class="w-2.5 h-2.5 rounded-full shrink-0"
-          :style="{ backgroundColor: getLayoutColor(layout).hex }"
-        ></div>
         <span class="text-sm font-medium" :class="layout.enabled || layout.isDefault ? 'text-gray-700' : 'text-gray-400 line-through'">
           {{ layout.name }}
         </span>
         <span v-if="layout.isDefault" class="text-xs text-gray-400">(fallback)</span>
+        <span v-else-if="isExpired(layout)" class="text-xs text-red-400">(expired)</span>
         <span v-else-if="!layout.enabled" class="text-xs text-gray-400">(disabled)</span>
 
         <!-- Enable/disable toggle (not for default) -->
@@ -65,7 +65,7 @@ const layouts = computed(() => store.layouts)
         <button
           v-if="!layout.isDefault"
           @click.stop="deleteLayout(layout.id)"
-          class="opacity-0 group-hover:opacity-100 p-0.5 text-gray-400 hover:text-red-500 transition-all"
+          class="hidden group-hover:block p-0.5 text-gray-400 hover:text-red-500 transition-colors"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -76,7 +76,7 @@ const layouts = computed(() => store.layouts)
       <!-- New Layout button -->
       <button
         @click="emit('create')"
-        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-gray-300 text-sm font-medium text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all whitespace-nowrap shrink-0"
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-gray-300 text-sm font-medium text-gray-500 hover:border-blue hover:text-blue hover:bg-blue-light transition-all whitespace-nowrap shrink-0"
       >
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>

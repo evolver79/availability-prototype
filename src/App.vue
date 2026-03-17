@@ -6,12 +6,12 @@
  * but the layout is only kept if the user clicks Save.
  * Cancel / Escape / backdrop click discards unsaved new layouts.
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import LayoutEditor from './components/LayoutEditor.vue'
 import LayoutStrip from './components/LayoutStrip.vue'
 import TimelineView from './components/TimelineView.vue'
 import ConflictPanel from './components/ConflictPanel.vue'
-import { selectedLayout, conflicts, createLayout, selectLayout, deleteLayout } from './store/index.js'
+import { selectedLayout, conflicts, createLayout, selectLayout, deleteLayout, restoreLayout } from './store/index.js'
 import { getConflictsForLayout } from './composables/conflictEngine.js'
 
 const isModalOpen = computed(() => selectedLayout.value !== null)
@@ -19,6 +19,8 @@ const isModalOpen = computed(() => selectedLayout.value !== null)
 // Track the id of a newly created layout that hasn't been saved yet.
 // If the modal is closed without saving, we delete it.
 const unsavedNewLayoutId = ref(null)
+// Snapshot of the layout before editing, so we can restore on cancel
+const layoutSnapshot = ref(null)
 
 const selectedLayoutConflicts = computed(() => {
   if (!selectedLayout.value) return []
@@ -34,16 +36,24 @@ const canSave = computed(() => selectedLayoutConflicts.value.length === 0 && has
 
 const saveFlash = ref(false)
 const showTimeline = ref(false)
+const showModalTimeline = ref(false)
+
+function snapshotCurrentLayout() {
+  if (!selectedLayout.value) return
+  // Deep clone the layout so edits don't mutate the snapshot
+  layoutSnapshot.value = JSON.parse(JSON.stringify(selectedLayout.value))
+}
 
 function openNewLayout() {
   const layout = createLayout()
   unsavedNewLayoutId.value = layout.id
+  layoutSnapshot.value = null // new layouts have no snapshot to restore
 }
 
 function saveLayout() {
   if (!canSave.value) return
-  // Mark as saved — no longer unsaved
   unsavedNewLayoutId.value = null
+  layoutSnapshot.value = null
   saveFlash.value = true
   setTimeout(() => {
     saveFlash.value = false
@@ -52,19 +62,24 @@ function saveLayout() {
 }
 
 function closeModal() {
-  // If the current layout was newly created and not saved, discard it
   if (unsavedNewLayoutId.value) {
+    // New layout — discard it entirely
     deleteLayout(unsavedNewLayoutId.value)
     unsavedNewLayoutId.value = null
+  } else if (layoutSnapshot.value && selectedLayout.value) {
+    // Existing layout — restore to pre-edit state
+    restoreLayout(selectedLayout.value.id, layoutSnapshot.value)
   }
+  layoutSnapshot.value = null
   selectLayout(null)
 }
 
-function openExistingLayout(id) {
-  // Opening an existing layout — not unsaved
-  unsavedNewLayoutId.value = null
-  selectLayout(id)
-}
+// Snapshot when an existing layout is selected (not a new one)
+watch(selectedLayout, (layout) => {
+  if (layout && !unsavedNewLayoutId.value) {
+    layoutSnapshot.value = JSON.parse(JSON.stringify(layout))
+  }
+})
 
 function onKeydown(e) {
   if (e.key === 'Escape' && isModalOpen.value) closeModal()
@@ -75,7 +90,7 @@ function onKeydown(e) {
   <div class="min-h-screen flex flex-col bg-gray-50" @keydown="onKeydown" tabindex="-1">
     <!-- Header -->
     <header class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shrink-0">
-      <h1 class="text-lg font-semibold text-gray-900">Layout Availability</h1>
+      <h1 class="text-lg font-semibold text-gray-900">Availability Prototype</h1>
       <div class="flex items-center gap-3">
         <!-- Timeline toggle -->
         <button
@@ -112,7 +127,7 @@ function onKeydown(e) {
       <Transition name="modal">
         <div
           v-if="isModalOpen"
-          class="fixed inset-0 z-40 flex items-start justify-center pt-10 px-4 pb-4"
+          class="fixed inset-0 z-40 flex items-center justify-center px-4"
         >
           <!-- Backdrop -->
           <div
@@ -147,17 +162,27 @@ function onKeydown(e) {
             <div class="flex-1 overflow-y-auto">
               <LayoutEditor v-if="selectedLayout" :layout="selectedLayout" />
 
-              <!-- Compact horizontal timeline -->
-              <div class="border-t border-gray-200 bg-gray-50">
-                <div class="px-5 py-2">
-                  <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Schedule Preview</h3>
-                </div>
-                <TimelineView />
-              </div>
-
-              <!-- Conflict panel -->
+              <!-- Conflict panel (only when conflicts exist) -->
               <div v-if="selectedLayoutConflicts.length > 0" class="border-t border-gray-200">
                 <ConflictPanel />
+              </div>
+
+              <!-- Timeline behind a toggle — keeps the modal compact -->
+              <div class="border-t border-gray-200">
+                <button
+                  @click="showModalTimeline = !showModalTimeline"
+                  class="w-full flex items-center justify-between px-5 py-2 text-xs font-medium text-gray-500 hover:bg-gray-50 transition-colors"
+                >
+                  <span>Schedule preview</span>
+                  <svg
+                    class="w-3.5 h-3.5 transition-transform"
+                    :class="showModalTimeline ? 'rotate-180' : ''"
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                  </svg>
+                </button>
+                <TimelineView v-if="showModalTimeline" />
               </div>
             </div>
 
@@ -199,7 +224,7 @@ function onKeydown(e) {
                     saveFlash
                       ? 'bg-green-500 text-white'
                       : canSave
-                        ? 'bg-blue-600 text-white hover:bg-blue-700'
+                        ? 'bg-blue text-white hover:bg-blue/90'
                         : 'bg-gray-200 text-gray-400 cursor-not-allowed',
                   ]"
                 >

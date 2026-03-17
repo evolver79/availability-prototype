@@ -429,7 +429,7 @@ function hideTooltip() {
             :key="row.layout.id"
             @click="selectLayout(row.layout.id)"
             class="flex items-center gap-1.5 px-2 cursor-pointer hover:bg-gray-50 transition-colors border-b border-gray-50"
-            :class="store.selectedLayoutId === row.layout.id ? 'bg-blue-50' : ''"
+            :class="store.selectedLayoutId === row.layout.id ? 'bg-blue-light' : ''"
             :style="{ height: ROW_HEIGHT + 'px', marginTop: ROW_GAP + 'px' }"
           >
             <div class="w-2 h-2 rounded-full shrink-0" :style="{ backgroundColor: row.color.hex }"></div>
@@ -450,7 +450,7 @@ function hideTooltip() {
                 v-if="tick.label"
                 class="absolute top-0 bottom-0 flex items-center text-xs border-l"
                 :class="[
-                  tick.isToday ? 'border-blue-300 text-blue-600 font-semibold' : tick.isMajor ? 'border-gray-200 text-gray-500' : 'border-gray-100 text-gray-400',
+                  tick.isToday ? 'border-blue text-blue font-semibold' : tick.isMajor ? 'border-gray-200 text-gray-500' : 'border-gray-100 text-gray-400',
                 ]"
                 :style="{ left: tick.x + 'px', paddingLeft: '4px' }"
               >
@@ -514,7 +514,7 @@ function hideTooltip() {
                 class="absolute top-0.5 bottom-0.5 rounded-sm cursor-pointer transition-shadow hover:shadow-md flex items-center overflow-hidden z-10"
                 :class="[
                   row.hasConflict ? 'ring-1 ring-amber-400' : '',
-                  store.selectedLayoutId === row.layout.id ? 'ring-2 ring-blue-500' : '',
+                  store.selectedLayoutId === row.layout.id ? 'ring-2 ring-blue' : '',
                 ]"
                 :style="{
                   left: bar.left + 'px',

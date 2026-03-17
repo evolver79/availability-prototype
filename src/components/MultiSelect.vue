@@ -66,8 +66,8 @@ const selectedOptions = computed(() =>
 
 function chipColor(opt) {
   if (props.warningIds.has(opt.id)) return 'bg-amber-100 text-amber-800 border border-amber-300'
-  if (opt.type === 'group') return 'bg-purple-50 text-purple-800 border border-purple-200'
-  return 'bg-blue-50 text-blue-800 border border-blue-200'
+  if (opt.type === 'group') return 'bg-highlight text-deep-blue border border-highlight'
+  return 'bg-blue-light text-blue border border-blue-light'
 }
 
 function toggle(id) {
@@ -108,12 +108,12 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
     <div
       @click="openDropdown"
       class="min-h-[38px] flex flex-wrap items-center gap-1 px-2 py-1.5 bg-white border rounded-lg cursor-text transition-colors"
-      :class="isOpen ? 'border-blue-400 ring-1 ring-blue-400' : 'border-gray-300 hover:border-gray-400'"
+      :class="isOpen ? 'border-blue ring-1 ring-blue' : 'border-gray-300 hover:border-gray-400'"
     >
       <!-- "ALL" badge when nothing selected and allBadge is on -->
       <span
         v-if="allBadge && selectedOptions.length === 0"
-        class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200"
+        class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-blue-light text-blue border border-blue-light"
       >ALL</span>
 
       <!-- Selected chips -->
@@ -195,7 +195,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
             <div
               class="w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors"
               :class="modelValue.includes(option.id)
-                ? option.type === 'group' ? 'bg-purple-600 border-purple-600' : 'bg-blue-600 border-blue-600'
+                ? option.type === 'group' ? 'bg-blue border-blue' : 'bg-blue border-blue-600'
                 : 'border-gray-300'"
             >
               <svg

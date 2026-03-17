@@ -42,7 +42,7 @@ function dateSummary(layout) {
       <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Layouts</h2>
       <button
         @click="createLayout"
-        class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+        class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue rounded-lg hover:bg-blue/90 transition-colors shadow-sm"
       >
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>

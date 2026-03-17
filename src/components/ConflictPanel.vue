@@ -73,13 +73,13 @@ function formatHour(h) {
           <div class="w-2 h-2 rounded-full shrink-0" :style="{ backgroundColor: getLayoutColor(conflict.layoutA).hex }"></div>
           <button
             @click="selectLayout(conflict.layoutA.id)"
-            class="text-xs font-semibold text-gray-800 hover:text-blue-600 transition-colors truncate"
+            class="text-xs font-semibold text-gray-800 hover:text-blue transition-colors truncate"
           >{{ conflict.layoutA.name }}</button>
           <span class="text-xs text-gray-400">vs</span>
           <div class="w-2 h-2 rounded-full shrink-0" :style="{ backgroundColor: getLayoutColor(conflict.layoutB).hex }"></div>
           <button
             @click="selectLayout(conflict.layoutB.id)"
-            class="text-xs font-semibold text-gray-800 hover:text-blue-600 transition-colors truncate"
+            class="text-xs font-semibold text-gray-800 hover:text-blue transition-colors truncate"
           >{{ conflict.layoutB.name }}</button>
         </div>
 

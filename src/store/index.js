@@ -4,8 +4,8 @@ import { detectConflicts } from '../composables/conflictEngine.js'
 
 const DEFAULT_LAYOUT_ID = 'l-default'
 
-let nextLayoutId = 2
-let nextSlotId = 2
+let nextLayoutId = 6
+let nextSlotId = 6
 
 const store = reactive({
   devices: [...DEVICES],
@@ -37,6 +37,106 @@ const store = reactive({
         },
       ],
     },
+    {
+      id: 'l2',
+      name: 'Påske',
+      colorIndex: 1,
+      isDefault: false,
+      enabled: true,
+      targetTv: true,
+      targetWeb: false,
+      deviceIds: ['d1', 'd2'],
+      groupIds: [],
+      slots: [
+        {
+          id: 's2',
+          dateMode: 'forever',
+          startDate: null,
+          endDate: null,
+          startHour: 6,
+          endHour: 9,
+          days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+          repeatMode: 'weekly',
+          repeatInterval: null,
+          durationDays: null,
+        },
+      ],
+    },
+    {
+      id: 'l3',
+      name: 'Bryllup',
+      colorIndex: 2,
+      isDefault: false,
+      enabled: true,
+      targetTv: true,
+      targetWeb: true,
+      deviceIds: ['d3'],
+      groupIds: [],
+      slots: [
+        {
+          id: 's3',
+          dateMode: 'forever',
+          startDate: null,
+          endDate: null,
+          startHour: 11,
+          endHour: 14,
+          days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+          repeatMode: 'weekly',
+          repeatInterval: null,
+          durationDays: null,
+        },
+      ],
+    },
+    {
+      id: 'l4',
+      name: 'Sandefjord Bredbånd',
+      colorIndex: 3,
+      isDefault: false,
+      enabled: true,
+      targetTv: true,
+      targetWeb: false,
+      deviceIds: [],
+      groupIds: ['g2'],
+      slots: [
+        {
+          id: 's4',
+          dateMode: 'forever',
+          startDate: null,
+          endDate: null,
+          startHour: 10,
+          endHour: 18,
+          days: ['Sat', 'Sun'],
+          repeatMode: 'weekly',
+          repeatInterval: null,
+          durationDays: null,
+        },
+      ],
+    },
+    {
+      id: 'l5',
+      name: 'Vinterkampanje',
+      colorIndex: 4,
+      isDefault: false,
+      enabled: true,
+      targetTv: true,
+      targetWeb: true,
+      deviceIds: ['d1', 'd3'],
+      groupIds: [],
+      slots: [
+        {
+          id: 's5',
+          dateMode: 'dateRange',
+          startDate: '2026-02-01',
+          endDate: '2026-03-16', // expired yesterday
+          startHour: 8,
+          endHour: 20,
+          days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+          repeatMode: 'daily',
+          repeatInterval: null,
+          durationDays: null,
+        },
+      ],
+    },
   ],
 
   selectedLayoutId: null,
@@ -52,9 +152,9 @@ export const selectedLayout = computed(() =>
   store.layouts.find((l) => l.id === store.selectedLayoutId) || null
 )
 
-// Only check conflicts between enabled, non-default layouts
+// Only check conflicts between enabled, non-default, non-expired layouts
 export const conflicts = computed(() => {
-  const active = store.layouts.filter((l) => !l.isDefault && l.enabled)
+  const active = store.layouts.filter((l) => !l.isDefault && l.enabled && !isExpired(l))
   return detectConflicts(active, store.groups, store.devices)
 })
 
@@ -62,7 +162,7 @@ export const conflicts = computed(() => {
 export function getConflictsIfEnabled(layoutId) {
   const layout = store.layouts.find((l) => l.id === layoutId)
   if (!layout) return []
-  const active = store.layouts.filter((l) => !l.isDefault && (l.enabled || l.id === layoutId))
+  const active = store.layouts.filter((l) => !l.isDefault && !isExpired(l) && (l.enabled || l.id === layoutId))
   const all = detectConflicts(active, store.groups, store.devices)
   return all.filter((c) => c.layoutA.id === layoutId || c.layoutB.id === layoutId)
 }
@@ -100,6 +200,16 @@ export function isDefaultLayout(id) {
   return id === DEFAULT_LAYOUT_ID
 }
 
+// Check if a layout's availability has fully expired (end date in the past)
+export function isExpired(layout) {
+  if (layout.isDefault) return false
+  if (layout.slots.length === 0) return false
+  const slot = layout.slots[0]
+  if (slot.dateMode === 'forever' || slot.dateMode === 'fromDate') return false
+  if (!slot.endDate) return false
+  return slot.endDate < '2026-03-17' // today
+}
+
 // --- Actions ---
 
 export function selectLayout(id) {
@@ -124,8 +234,8 @@ export function createLayout() {
         dateMode: 'forever',
         startDate: null,
         endDate: null,
-        startHour: 9,
-        endHour: 17,
+        startHour: 12,
+        endHour: 12,
         days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
         repeatMode: 'daily',
         repeatInterval: null,
@@ -144,6 +254,13 @@ export function deleteLayout(id) {
   const idx = store.layouts.findIndex((l) => l.id === id)
   if (idx !== -1) store.layouts.splice(idx, 1)
   if (store.selectedLayoutId === id) store.selectedLayoutId = null
+}
+
+// Replace a layout's data with a snapshot (for cancel/undo)
+export function restoreLayout(id, snapshot) {
+  const layout = store.layouts.find((l) => l.id === id)
+  if (!layout) return
+  Object.assign(layout, snapshot)
 }
 
 export function updateLayout(id, updates) {
