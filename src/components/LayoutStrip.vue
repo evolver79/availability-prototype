@@ -10,7 +10,6 @@ import {
   canEnable,
   isExpired,
   isActiveNow,
-  reorderLayout,
   resolveDeviceIds,
 } from '../store/index.js'
 
@@ -23,72 +22,30 @@ const hoveredId = ref(null)
 function tooltipInfo(layout) {
   if (layout.isDefault) return 'Fallback layout — always active'
   const parts = []
-
-  // Target
   const targets = []
   if (layout.targetTv) targets.push('TV')
   if (layout.targetWeb) targets.push('WEB')
   parts.push(targets.length ? targets.join(' + ') : 'No target')
-
-  // Devices
   if (layout.targetTv) {
     const count = resolveDeviceIds(layout).size
     const hasSpecific = layout.deviceIds.length > 0 || layout.groupIds.length > 0
     parts.push(hasSpecific ? `${count} device${count !== 1 ? 's' : ''}` : 'All devices')
   }
-
-  // Time
   if (layout.slots.length > 0) {
     const s = layout.slots[0]
     parts.push(`${fmtH(s.startHour)} – ${fmtH(s.endHour)}`)
-    // Date
     if (s.dateMode === 'forever') parts.push('Always')
     else if (s.dateMode === 'fromDate') parts.push(`From ${s.startDate || '—'}`)
     else if (s.dateMode === 'untilDate') parts.push(`Until ${s.endDate || '—'}`)
     else if (s.dateMode === 'dateRange') parts.push(`${s.startDate || '—'} → ${s.endDate || '—'}`)
   }
-
   if (isExpired(layout)) parts.push('Expired')
   else if (!layout.enabled) parts.push('Disabled')
-
   return parts.join('  ·  ')
 }
 
 function fmtH(h) {
-  if (h === 0) return '12 AM'
-  if (h === 12) return '12 PM'
-  if (h < 12) return `${h} AM`
-  return `${h - 12} PM`
-}
-
-// --- Drag to reorder ---
-const dragId = ref(null)
-const dragOverId = ref(null)
-
-function onDragStart(e, layout) {
-  if (layout.isDefault) { e.preventDefault(); return }
-  dragId.value = layout.id
-  e.dataTransfer.effectAllowed = 'move'
-}
-
-function onDragOver(e, layout) {
-  if (layout.isDefault) return
-  e.preventDefault()
-  dragOverId.value = layout.id
-}
-
-function onDrop(e, layout) {
-  e.preventDefault()
-  if (dragId.value && dragId.value !== layout.id) {
-    reorderLayout(dragId.value, layout.id)
-  }
-  dragId.value = null
-  dragOverId.value = null
-}
-
-function onDragEnd() {
-  dragId.value = null
-  dragOverId.value = null
+  return `${String(h).padStart(2, '0')}:00`
 }
 </script>
 
@@ -101,12 +58,7 @@ function onDragEnd() {
         @click="selectLayout(layout.id)"
         @mouseenter="hoveredId = layout.id"
         @mouseleave="hoveredId = null"
-        :draggable="!layout.isDefault"
-        @dragstart="onDragStart($event, layout)"
-        @dragover="onDragOver($event, layout)"
-        @drop="onDrop($event, layout)"
-        @dragend="onDragEnd"
-        class="group relative flex items-center gap-1.5 pl-1.5 pr-2 py-1.5 rounded-lg border cursor-pointer transition-all whitespace-nowrap shrink-0"
+        class="group relative flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-lg border cursor-pointer transition-all whitespace-nowrap shrink-0"
         :class="[
           selectedLayout?.id === layout.id
             ? 'border-blue bg-blue-light shadow-sm'
@@ -115,23 +67,8 @@ function onDragEnd() {
               : !layout.enabled && !layout.isDefault
                 ? 'border-gray-200 bg-gray-100 opacity-60 hover:opacity-80'
                 : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50',
-          dragOverId === layout.id && dragId !== layout.id ? 'ring-2 ring-blue' : '',
-          dragId === layout.id ? 'opacity-40' : '',
         ]"
       >
-        <!-- Drag grip (non-default only, on hover) -->
-        <span
-          v-if="!layout.isDefault"
-          class="text-gray-300 group-hover:text-gray-400 cursor-grab active:cursor-grabbing shrink-0"
-        >
-          <svg class="w-3 h-3" viewBox="0 0 6 10" fill="currentColor">
-            <circle cx="1" cy="1" r="1"/><circle cx="5" cy="1" r="1"/>
-            <circle cx="1" cy="5" r="1"/><circle cx="5" cy="5" r="1"/>
-            <circle cx="1" cy="9" r="1"/><circle cx="5" cy="9" r="1"/>
-          </svg>
-        </span>
-        <span v-else class="w-3 shrink-0"></span>
-
         <!-- Active now dot -->
         <span
           v-if="isActiveNow(layout)"

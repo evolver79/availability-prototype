@@ -137,7 +137,7 @@ function onKeydown(e) {
           ></div>
 
           <!-- Modal panel -->
-          <div class="relative bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden z-50">
+          <div class="relative bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[85vh] flex flex-col overflow-hidden z-50">
             <!-- Modal header -->
             <div class="flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-gray-50 shrink-0">
               <div class="flex items-center gap-2">

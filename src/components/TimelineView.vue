@@ -10,7 +10,7 @@
  * - Month zoom: x-axis = all relevant dates at 28px/day (compact)
  * - Open-ended layouts extend to a sensible horizon (90 days out)
  */
-import { computed, ref, watch, nextTick } from 'vue'
+import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import {
   store,
   conflicts,
@@ -292,6 +292,23 @@ function scrollToToday() {
   scrollContainer.value.scrollLeft = offset
 }
 
+// --- Scroll tracking for sticky bar labels ---
+const scrollLeft = ref(0)
+
+function onScroll() {
+  if (scrollContainer.value) {
+    scrollLeft.value = scrollContainer.value.scrollLeft
+  }
+}
+
+onMounted(() => scrollContainer.value?.addEventListener('scroll', onScroll))
+onBeforeUnmount(() => scrollContainer.value?.removeEventListener('scroll', onScroll))
+
+// Compute the x position for a bar label so it sticks to the left visible edge of the bar
+function barLabelLeft(bar) {
+  return Math.max(bar.left, Math.min(scrollLeft.value, bar.left + bar.width - 120))
+}
+
 // --- Day navigation (day view only) ---
 function navigateDay(delta) {
   const d = new Date(store.timelineDate + 'T00:00:00')
@@ -301,10 +318,7 @@ function navigateDay(delta) {
 
 // --- Helpers ---
 function formatHour(h) {
-  if (h === 0) return '12a'
-  if (h === 12) return '12p'
-  if (h < 12) return `${h}a`
-  return `${h - 12}p`
+  return `${String(h).padStart(2, '0')}:00`
 }
 
 function shiftDate(dateStr, days) {
@@ -358,20 +372,44 @@ function startDragLeft(layoutId, slotId, startHour, event) {
   document.addEventListener('mouseup', onUp)
 }
 
-// --- Tooltip ---
-const tooltip = ref(null)
+// --- Tooltip (Popover API) ---
+const tooltipRef = ref(null)
+const tooltipData = ref(null)
+let tooltipTimer = null
 
 function showTooltip(event, layout, bar) {
+  clearTimeout(tooltipTimer)
   const rect = event.currentTarget.getBoundingClientRect()
-  tooltip.value = {
-    x: rect.left + rect.width / 2,
-    y: rect.top - 4,
-    text: `${layout.name} · ${bar.label} · ${resolveDeviceIds(layout).size} devices`,
+  const devices = resolveDeviceIds(layout)
+  const hasSpecific = layout.deviceIds.length > 0 || layout.groupIds.length > 0
+  const targets = []
+  if (layout.targetTv) targets.push('TV')
+  if (layout.targetWeb) targets.push('WEB')
+
+  tooltipData.value = {
+    name: layout.name,
+    time: bar.label,
+    target: targets.join(' + ') || 'No target',
+    devices: layout.targetTv ? (hasSpecific ? `${devices.size} device${devices.size !== 1 ? 's' : ''}` : 'All devices') : null,
+    enabled: layout.enabled,
+    isDefault: layout.isDefault,
   }
+
+  nextTick(() => {
+    if (!tooltipRef.value) return
+    try { tooltipRef.value.showPopover() } catch {}
+    Object.assign(tooltipRef.value.style, {
+      top: (rect.top - 8) + 'px',
+      left: (rect.left + rect.width / 2) + 'px',
+    })
+  })
 }
 
 function hideTooltip() {
-  tooltip.value = null
+  tooltipTimer = setTimeout(() => {
+    try { tooltipRef.value?.hidePopover() } catch {}
+    tooltipData.value = null
+  }, 50)
 }
 </script>
 
@@ -422,7 +460,7 @@ function hideTooltip() {
     <div ref="scrollContainer" class="overflow-x-auto timeline-scroll bg-white" style="min-height: 80px; max-height: 200px;">
       <div class="flex" :style="{ minWidth: (timelineWidth + 120) + 'px', height: totalHeight + 'px' }">
         <!-- Layout labels (sticky left) -->
-        <div class="w-[120px] shrink-0 border-r border-gray-200 bg-white sticky left-0 z-20">
+        <div class="w-[120px] shrink-0 border-r border-gray-200 bg-white sticky left-0 z-40">
           <div :style="{ height: HEADER_HEIGHT + 'px' }" class="border-b border-gray-100"></div>
           <div
             v-for="(row, idx) in layoutRows"
@@ -477,12 +515,26 @@ function hideTooltip() {
               ></div>
             </template>
 
-            <!-- Today line -->
+            <!-- Now line (day view): red vertical at current hour -->
             <div
-              v-if="visibleDates.some(d => d.isToday)"
-              class="absolute top-0 w-0.5 bg-blue-400 z-30 pointer-events-none"
+              v-if="store.timelineView === 'day' && visibleDates.some(d => d.isToday)"
+              class="absolute top-0 w-[2px] bg-red-500 z-30 pointer-events-none"
               :style="{
-                left: (store.timelineView === 'day' ? 9 * HOUR_WIDTH : visibleDates.findIndex(d => d.isToday) * cellWidth) + 'px',
+                left: (9 * HOUR_WIDTH) + 'px',
+                height: (layoutRows.length * (ROW_HEIGHT + ROW_GAP) + ROW_GAP + 4) + 'px',
+              }"
+            >
+              <div class="absolute -top-3 -left-[13px] px-1 py-0.5 bg-red-500 text-white text-[8px] font-bold rounded whitespace-nowrap">
+                09:00
+              </div>
+            </div>
+
+            <!-- Today line (week/month view): blue vertical at today's column -->
+            <div
+              v-if="store.timelineView !== 'day' && visibleDates.some(d => d.isToday)"
+              class="absolute top-0 w-[2px] bg-blue z-30 pointer-events-none"
+              :style="{
+                left: (visibleDates.findIndex(d => d.isToday) * cellWidth) + 'px',
                 height: (layoutRows.length * (ROW_HEIGHT + ROW_GAP) + ROW_GAP) + 'px',
               }"
             ></div>
@@ -511,7 +563,7 @@ function hideTooltip() {
                 @click.stop="selectLayout(row.layout.id)"
                 @mouseenter="showTooltip($event, row.layout, bar)"
                 @mouseleave="hideTooltip"
-                class="absolute top-0.5 bottom-0.5 rounded-sm cursor-pointer transition-shadow hover:shadow-md flex items-center overflow-hidden z-10"
+                class="absolute top-0.5 bottom-0.5 rounded-sm cursor-pointer transition-shadow hover:shadow-md z-10"
                 :class="[
                   row.hasConflict ? 'ring-1 ring-amber-400' : '',
                   store.selectedLayoutId === row.layout.id ? 'ring-2 ring-blue' : '',
@@ -529,21 +581,6 @@ function hideTooltip() {
                   @mousedown="startDragLeft(row.layout.id, bar.slotId, row.layout.slots.find(s => s.id === bar.slotId)?.startHour || 0, $event)"
                   class="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-black/10 z-20"
                 ></div>
-
-                <div v-if="bar.isOpenStart" class="text-xs px-0.5 opacity-50 shrink-0">...</div>
-
-                <div class="flex items-center gap-1 px-1.5 min-w-0 flex-1 overflow-hidden">
-                  <span class="text-xs font-medium truncate" :style="{ color: row.color.hex }">
-                    {{ bar.width > 60 ? row.layout.name : '' }}
-                  </span>
-                  <span v-if="bar.width > 120" class="text-xs opacity-50 truncate" :style="{ color: row.color.hex }">
-                    {{ bar.label }}
-                  </span>
-                </div>
-
-                <svg v-if="row.hasConflict && bar.width > 30" class="w-3 h-3 text-amber-500 shrink-0 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                  <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.168 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
-                </svg>
 
                 <!-- Open-end fade + arrow -->
                 <div
@@ -563,21 +600,51 @@ function hideTooltip() {
                   class="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-black/10 z-20"
                 ></div>
               </div>
+
+              <!-- Bar labels: positioned via JS, clipped to bar bounds -->
+              <div
+                v-for="bar in row.bars"
+                :key="'label-' + bar.key"
+                v-show="bar.width > 40"
+                class="absolute top-0 bottom-0 overflow-hidden pointer-events-none z-20"
+                :style="{ left: bar.left + 'px', width: bar.width + 'px' }"
+              >
+                <div
+                  class="absolute top-0 bottom-0 flex items-center"
+                  :style="{ left: (barLabelLeft(bar) - bar.left) + 'px' }"
+                >
+                  <div class="flex items-center gap-1 px-1.5 overflow-hidden" :style="{ maxWidth: Math.min(bar.width, 200) + 'px' }">
+                    <span class="text-xs font-medium truncate" :style="{ color: row.color.hex }">
+                      {{ row.layout.name }}
+                    </span>
+                    <span v-if="bar.width > 100" class="text-xs opacity-50 whitespace-nowrap" :style="{ color: row.color.hex }">
+                      {{ bar.label }}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Floating tooltip -->
-    <Teleport to="body">
-      <div
-        v-if="tooltip"
-        class="fixed z-50 px-2 py-1 text-xs text-white bg-gray-900 rounded shadow-lg pointer-events-none transform -translate-x-1/2 -translate-y-full"
-        :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }"
-      >
-        {{ tooltip.text }}
-      </div>
-    </Teleport>
+    <!-- Tooltip: native popover, top layer -->
+    <div
+      ref="tooltipRef"
+      popover="manual"
+      class="m-0 px-3 py-2 bg-gray-900 text-white rounded-lg shadow-lg pointer-events-none -translate-x-1/2 -translate-y-full"
+      style="max-width: 260px;"
+    >
+      <template v-if="tooltipData">
+        <div class="text-xs font-semibold mb-1">{{ tooltipData.name }}</div>
+        <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-gray-300">
+          <span>{{ tooltipData.time }}</span>
+          <span>{{ tooltipData.target }}</span>
+          <span v-if="tooltipData.devices">{{ tooltipData.devices }}</span>
+          <span v-if="!tooltipData.enabled && !tooltipData.isDefault" class="text-amber-300">Disabled</span>
+        </div>
+      </template>
+    </div>
   </div>
 </template>

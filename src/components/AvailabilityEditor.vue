@@ -10,6 +10,7 @@ import { computed, ref, watchEffect } from 'vue'
 import { addSlot, updateSlot } from '../store/index.js'
 import { DAYS, DATE_MODES, REPEAT_MODES } from '../store/data.js'
 import DateRangePicker from './DateRangePicker.vue'
+import TimeRangeSlider from './TimeRangeSlider.vue'
 
 const props = defineProps({
   layout: { type: Object, required: true },
@@ -67,10 +68,7 @@ function onStartDate(val) { if (slot.value) updateSlot(props.layout.id, slot.val
 function onEndDate(val) { if (slot.value) updateSlot(props.layout.id, slot.value.id, { endDate: val }) }
 
 function formatHour(h) {
-  if (h === 0) return '12 AM'
-  if (h === 12) return '12 PM'
-  if (h < 12) return `${h} AM`
-  return `${h - 12} PM`
+  return `${String(h).padStart(2, '0')}:00`
 }
 
 function resetAll() {
@@ -87,55 +85,45 @@ const isAllDefaults = computed(() => slot.value && slot.value.dateMode === 'fore
 
 <template>
   <div v-if="slot" class="space-y-2">
-    <!-- Row: Date range + Time side by side -->
-    <div class="flex items-start gap-4 flex-wrap">
-      <!-- Date range -->
-      <div class="flex-1 min-w-[200px]">
-        <div class="flex items-center justify-between mb-1">
-          <label class="text-xs text-gray-500">When</label>
-          <button
-            v-if="!isAllDefaults"
-            @click="resetAll"
-            class="text-xs text-blue hover:text-blue transition-colors"
-          >Reset all</button>
-        </div>
-        <div class="flex items-center gap-2 flex-wrap">
-          <select
-            :value="slot.dateMode"
-            @change="setDateMode($event.target.value)"
-            class="text-sm bg-white border border-gray-200 rounded-md px-2 py-1 h-[30px] focus:outline-none focus:ring-1 focus:ring-blue"
-          >
-            <option v-for="opt in DATE_MODES" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-          </select>
-          <DateRangePicker
-            v-if="showDatePicker"
-            :startDate="slot.startDate"
-            :endDate="slot.endDate"
-            :showStart="showStart"
-            :showEnd="showEnd"
-            @update:startDate="onStartDate"
-            @update:endDate="onEndDate"
-          />
-        </div>
+    <!-- Date range -->
+    <div>
+      <div class="flex items-center justify-between mb-1">
+        <label class="text-xs text-gray-500">When</label>
+        <button
+          v-if="!isAllDefaults"
+          @click="resetAll"
+          class="text-xs text-blue hover:text-blue transition-colors"
+        >Reset all</button>
       </div>
+      <div class="flex items-center gap-2">
+        <select
+          :value="slot.dateMode"
+          @change="setDateMode($event.target.value)"
+          class="text-sm bg-white border border-gray-200 rounded-md px-2 py-1 h-[30px] focus:outline-none focus:ring-1 focus:ring-blue shrink-0"
+        >
+          <option v-for="opt in DATE_MODES" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        </select>
+        <DateRangePicker
+          v-if="showDatePicker"
+          :startDate="slot.startDate"
+          :endDate="slot.endDate"
+          :showStart="showStart"
+          :showEnd="showEnd"
+          @update:startDate="onStartDate"
+          @update:endDate="onEndDate"
+        />
+      </div>
+    </div>
 
-      <!-- Time of day -->
-      <div class="shrink-0">
-        <label class="text-xs text-gray-500 mb-1 block">Time</label>
-        <div class="flex items-center gap-1.5">
-          <select :value="slot.startHour" @change="setStartHour($event.target.value)"
-            class="text-sm bg-white border border-gray-200 rounded-md px-2 py-1 h-[30px] focus:outline-none focus:ring-1 focus:ring-blue"
-          >
-            <option v-for="h in 24" :key="h - 1" :value="h - 1">{{ formatHour(h - 1) }}</option>
-          </select>
-          <span class="text-gray-400 text-xs">→</span>
-          <select :value="slot.endHour" @change="setEndHour($event.target.value)"
-            class="text-sm bg-white border border-gray-200 rounded-md px-2 py-1 h-[30px] focus:outline-none focus:ring-1 focus:ring-blue"
-          >
-            <option v-for="h in 24" :key="h" :value="h">{{ formatHour(h) }}</option>
-          </select>
-        </div>
-      </div>
+    <!-- Time of day -->
+    <div>
+      <label class="text-xs text-gray-500 mb-1 block">Time</label>
+      <TimeRangeSlider
+        :startHour="slot.startHour"
+        :endHour="slot.endHour"
+        @update:startHour="(h) => updateSlot(layout.id, slot.id, { startHour: h })"
+        @update:endHour="(h) => updateSlot(layout.id, slot.id, { endHour: h })"
+      />
     </div>
 
     <!-- Repeat: collapsed by default when "daily", shown inline otherwise -->

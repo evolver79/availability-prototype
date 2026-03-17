@@ -46,10 +46,7 @@ function deviceName(id) {
 }
 
 function formatHour(h) {
-  if (h === 0) return '12a'
-  if (h === 12) return '12p'
-  if (h < 12) return `${h}a`
-  return `${h - 12}p`
+  return `${String(h).padStart(2, '0')}:00`
 }
 </script>
 

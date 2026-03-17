@@ -83,7 +83,7 @@ const timeConflictHints = computed(() => {
   const hints = []
   for (const c of layoutConflicts.value) {
     const other = c.layoutA.id === props.layout.id ? c.layoutB : c.layoutA
-    const fh = (h) => { if (h===0) return '12a'; if (h===12) return '12p'; return h<12 ? `${h}a` : `${h-12}p` }
+    const fh = (h) => `${String(h).padStart(2, '0')}:00`
     hints.push(`Time overlap with "${other.name}" (${fh(c.overlapStart)}–${fh(c.overlapEnd)})`)
   }
   return [...new Set(hints)]
