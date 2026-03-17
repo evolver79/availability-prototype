@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+@layer components {
+  .conflict-pulse {
+    animation: conflict-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes conflict-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  .slot-block {
+    @apply transition-all duration-150 ease-out;
+  }
+
+  .slot-block:hover {
+    @apply shadow-lg;
+    z-index: 10;
+  }
+
+  .timeline-scroll::-webkit-scrollbar {
+    height: 6px;
+  }
+  .timeline-scroll::-webkit-scrollbar-track {
+    @apply bg-gray-100 rounded;
+  }
+  .timeline-scroll::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 rounded;
+  }
+
+  /* Drag ghost style */
+  .dragging {
+    opacity: 0.5;
+  }
+}
