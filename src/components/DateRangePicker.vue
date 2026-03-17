@@ -1,9 +1,9 @@
 <script setup>
 /**
- * DateRangePicker — compact inline calendar for selecting a date range.
- * Calendar dropdown is teleported to <body> to avoid overflow clipping in modals.
+ * DateRangePicker — uses native Popover API for the calendar dropdown.
+ * No Teleport needed — popover lives in the top layer automatically.
  */
-import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 
 const props = defineProps({
   startDate: { type: String, default: null },
@@ -16,11 +16,7 @@ const emit = defineEmits(['update:startDate', 'update:endDate'])
 
 const isOpen = ref(false)
 const triggerRef = ref(null)
-const dropdownRef = ref(null)
-
-// Position of the dropdown (computed from trigger button)
-const dropdownStyle = ref({})
-
+const popoverRef = ref(null)
 const selecting = ref('start')
 const viewDate = ref(new Date(props.startDate || props.endDate || '2026-03-17'))
 
@@ -37,7 +33,6 @@ const calendarDays = computed(() => {
   const month = viewMonth.value
   const firstDay = new Date(year, month, 1)
   const lastDay = new Date(year, month + 1, 0)
-
   let startDow = firstDay.getDay() - 1
   if (startDow < 0) startDow = 6
 
@@ -70,7 +65,7 @@ function selectDay(dateStr) {
   if (selecting.value === 'start') {
     emit('update:startDate', dateStr)
     if (props.endDate && dateStr > props.endDate) emit('update:endDate', null)
-    if (props.showEnd) { selecting.value = 'end' } else { isOpen.value = false }
+    if (props.showEnd) { selecting.value = 'end' } else { closePicker() }
   } else {
     if (props.startDate && dateStr < props.startDate) {
       emit('update:startDate', dateStr)
@@ -78,7 +73,7 @@ function selectDay(dateStr) {
     } else {
       emit('update:endDate', dateStr)
       selecting.value = 'start'
-      isOpen.value = false
+      closePicker()
     }
   }
 }
@@ -86,16 +81,13 @@ function selectDay(dateStr) {
 function prevMonth() { const d = new Date(viewDate.value); d.setMonth(d.getMonth() - 1); viewDate.value = d }
 function nextMonth() { const d = new Date(viewDate.value); d.setMonth(d.getMonth() + 1); viewDate.value = d }
 
-function updateDropdownPosition() {
-  if (!triggerRef.value) return
+function positionPopover() {
+  if (!triggerRef.value || !popoverRef.value) return
   const rect = triggerRef.value.getBoundingClientRect()
-  dropdownStyle.value = {
-    position: 'fixed',
+  Object.assign(popoverRef.value.style, {
     top: rect.bottom + 4 + 'px',
     left: rect.left + 'px',
-    zIndex: 9999,
-    width: '280px',
-  }
+  })
 }
 
 function openPicker() {
@@ -106,7 +98,15 @@ function openPicker() {
   const focusDate = props.startDate || props.endDate || '2026-03-17'
   viewDate.value = new Date(focusDate + 'T00:00:00')
   isOpen.value = true
-  nextTick(updateDropdownPosition)
+  nextTick(() => {
+    popoverRef.value?.showPopover()
+    positionPopover()
+  })
+}
+
+function closePicker() {
+  isOpen.value = false
+  try { popoverRef.value?.hidePopover() } catch {}
 }
 
 function formatDisplay(dateStr) {
@@ -117,12 +117,15 @@ function formatDisplay(dateStr) {
 
 function onClickOutside(e) {
   if (triggerRef.value?.contains(e.target)) return
-  if (dropdownRef.value?.contains(e.target)) return
-  isOpen.value = false
+  if (popoverRef.value?.contains(e.target)) return
+  if (isOpen.value) closePicker()
 }
 
 onMounted(() => document.addEventListener('mousedown', onClickOutside))
-onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', onClickOutside)
+  try { popoverRef.value?.hidePopover() } catch {}
+})
 </script>
 
 <template>
@@ -153,63 +156,52 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
       </template>
     </button>
 
-    <!-- Calendar dropdown — teleported to body to escape modal overflow -->
-    <Teleport to="body">
-      <Transition
-        enter-active-class="transition ease-out duration-100"
-        enter-from-class="opacity-0 -translate-y-1"
-        enter-to-class="opacity-100 translate-y-0"
-        leave-active-class="transition ease-in duration-75"
-        leave-from-class="opacity-100 translate-y-0"
-        leave-to-class="opacity-0 -translate-y-1"
-      >
-        <div
-          v-if="isOpen"
-          ref="dropdownRef"
-          class="bg-white border border-gray-200 rounded-lg shadow-lg p-3"
-          :style="dropdownStyle"
+    <!-- Calendar dropdown: native popover, top layer -->
+    <div
+      ref="popoverRef"
+      popover="manual"
+      class="m-0 p-3 bg-white border border-gray-200 rounded-lg shadow-lg"
+      style="width: 280px;"
+    >
+      <div class="text-xs text-gray-400 mb-2">
+        Selecting: <span class="font-medium text-gray-600">{{ selecting === 'start' ? 'start date' : 'end date' }}</span>
+      </div>
+
+      <div class="flex items-center justify-between mb-2">
+        <button @click="prevMonth" class="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+          </svg>
+        </button>
+        <span class="text-sm font-medium text-gray-700">{{ viewMonthName }}</span>
+        <button @click="nextMonth" class="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="grid grid-cols-7 mb-1">
+        <div v-for="wd in WEEKDAYS" :key="wd" class="text-center text-xs text-gray-400 font-medium py-1">{{ wd }}</div>
+      </div>
+
+      <div class="grid grid-cols-7">
+        <button
+          v-for="day in calendarDays"
+          :key="day.dateStr"
+          @click="selectDay(day.dateStr)"
+          class="h-8 text-xs rounded-sm transition-colors relative flex items-center justify-center"
+          :class="[
+            !day.isCurrentMonth ? 'text-gray-300' : 'text-gray-700 hover:bg-gray-100',
+            isInRange(day.dateStr) && !isStart(day.dateStr) && !isEnd(day.dateStr) ? 'bg-blue-light' : '',
+            isStart(day.dateStr) ? 'bg-blue text-white font-semibold rounded-l-md' : '',
+            isEnd(day.dateStr) ? 'bg-blue text-white font-semibold rounded-r-md' : '',
+            isToday(day.dateStr) && !isStart(day.dateStr) && !isEnd(day.dateStr) ? 'font-semibold ring-1 ring-blue' : '',
+          ]"
         >
-          <div class="text-xs text-gray-400 mb-2">
-            Selecting: <span class="font-medium text-gray-600">{{ selecting === 'start' ? 'start date' : 'end date' }}</span>
-          </div>
-
-          <div class="flex items-center justify-between mb-2">
-            <button @click="prevMonth" class="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-              </svg>
-            </button>
-            <span class="text-sm font-medium text-gray-700">{{ viewMonthName }}</span>
-            <button @click="nextMonth" class="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-              </svg>
-            </button>
-          </div>
-
-          <div class="grid grid-cols-7 mb-1">
-            <div v-for="wd in WEEKDAYS" :key="wd" class="text-center text-xs text-gray-400 font-medium py-1">{{ wd }}</div>
-          </div>
-
-          <div class="grid grid-cols-7">
-            <button
-              v-for="day in calendarDays"
-              :key="day.dateStr"
-              @click="selectDay(day.dateStr)"
-              class="h-8 text-xs rounded-sm transition-colors relative flex items-center justify-center"
-              :class="[
-                !day.isCurrentMonth ? 'text-gray-300' : 'text-gray-700 hover:bg-gray-100',
-                isInRange(day.dateStr) && !isStart(day.dateStr) && !isEnd(day.dateStr) ? 'bg-blue-light' : '',
-                isStart(day.dateStr) ? 'bg-blue text-white font-semibold rounded-l-md' : '',
-                isEnd(day.dateStr) ? 'bg-blue text-white font-semibold rounded-r-md' : '',
-                isToday(day.dateStr) && !isStart(day.dateStr) && !isEnd(day.dateStr) ? 'font-semibold ring-1 ring-blue' : '',
-              ]"
-            >
-              {{ day.date.getDate() }}
-            </button>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+          {{ day.date.getDate() }}
+        </button>
+      </div>
+    </div>
   </div>
 </template>

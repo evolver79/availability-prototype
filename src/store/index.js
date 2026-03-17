@@ -1,6 +1,6 @@
 import { reactive, computed } from 'vue'
 import { DEVICES, GROUPS, LAYOUT_COLORS } from './data.js'
-import { detectConflicts } from '../composables/conflictEngine.js'
+import { detectConflicts, isSlotActiveOnDate } from '../composables/conflictEngine.js'
 
 const DEFAULT_LAYOUT_ID = 'l-default'
 
@@ -171,6 +171,26 @@ export function toggleEnabled(id) {
   const layout = store.layouts.find((l) => l.id === id)
   if (!layout || layout.isDefault) return
   layout.enabled = !layout.enabled
+}
+
+// Reorder: move a layout to a new index (default layout always stays at 0)
+export function reorderLayout(fromId, toId) {
+  const fromIdx = store.layouts.findIndex((l) => l.id === fromId)
+  const toIdx = store.layouts.findIndex((l) => l.id === toId)
+  if (fromIdx < 0 || toIdx < 0) return
+  if (store.layouts[fromIdx].isDefault || store.layouts[toIdx].isDefault) return
+  const [item] = store.layouts.splice(fromIdx, 1)
+  store.layouts.splice(toIdx, 0, item)
+}
+
+// Check if a layout is active right now (mock: today = 2026-03-17, hour = 9)
+export function isActiveNow(layout) {
+  if (layout.isDefault) return false
+  if (!layout.enabled || isExpired(layout)) return false
+  if (layout.slots.length === 0) return false
+  const slot = layout.slots[0]
+  if (!isSlotActiveOnDate(slot, '2026-03-17')) return false
+  return 9 >= slot.startHour && 9 < slot.endHour
 }
 
 // Check if enabling a layout would cause conflicts

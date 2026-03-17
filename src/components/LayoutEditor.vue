@@ -63,6 +63,31 @@ function toggleTv() {
 function updateName(e) { updateLayout(props.layout.id, { name: e.target.value }) }
 
 const noTarget = computed(() => !props.layout.targetTv && !props.layout.targetWeb)
+
+// Live conflict hints: which layouts conflict and on what
+const deviceConflictHints = computed(() => {
+  const hints = []
+  for (const c of layoutConflicts.value) {
+    if (c.overlappingDevices.length === 0) continue
+    const other = c.layoutA.id === props.layout.id ? c.layoutB : c.layoutA
+    const deviceNames = c.overlappingDevices
+      .map((id) => store.devices.find((d) => d.id === id)?.name || id)
+      .slice(0, 3)
+    const extra = c.overlappingDevices.length > 3 ? ` +${c.overlappingDevices.length - 3}` : ''
+    hints.push(`Overlaps with "${other.name}" on ${deviceNames.join(', ')}${extra}`)
+  }
+  return [...new Set(hints)]
+})
+
+const timeConflictHints = computed(() => {
+  const hints = []
+  for (const c of layoutConflicts.value) {
+    const other = c.layoutA.id === props.layout.id ? c.layoutB : c.layoutA
+    const fh = (h) => { if (h===0) return '12a'; if (h===12) return '12p'; return h<12 ? `${h}a` : `${h-12}p` }
+    hints.push(`Time overlap with "${other.name}" (${fh(c.overlapStart)}–${fh(c.overlapEnd)})`)
+  }
+  return [...new Set(hints)]
+})
 </script>
 
 <template>
@@ -113,7 +138,7 @@ const noTarget = computed(() => !props.layout.targetTv && !props.layout.targetWe
         <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.168 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
       </svg>
       <span class="text-amber-800">
-        {{ layoutConflicts.length }} conflict{{ layoutConflicts.length !== 1 ? 's' : '' }} — see below
+        {{ layoutConflicts.length }} conflict{{ layoutConflicts.length !== 1 ? 's' : '' }} — toggle conflicts in header to resolve
       </span>
     </div>
 
@@ -129,9 +154,31 @@ const noTarget = computed(() => !props.layout.targetTv && !props.layout.targetWe
         grouped
         allBadge
       />
+      <!-- Live device conflict hints -->
+      <p
+        v-for="hint in deviceConflictHints"
+        :key="hint"
+        class="text-xs text-amber-600 mt-1 flex items-center gap-1"
+      >
+        <svg class="w-3 h-3 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.168 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
+        </svg>
+        {{ hint }}
+      </p>
     </div>
 
     <!-- Availability (inline, no wrapper card) -->
     <AvailabilityEditor :layout="layout" />
+    <!-- Live time conflict hints -->
+    <p
+      v-for="hint in timeConflictHints"
+      :key="hint"
+      class="text-xs text-amber-600 mt-1 flex items-center gap-1"
+    >
+      <svg class="w-3 h-3 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+        <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.168 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
+      </svg>
+      {{ hint }}
+    </p>
   </div>
 </template>
