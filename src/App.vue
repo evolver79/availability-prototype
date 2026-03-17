@@ -37,6 +37,7 @@ const canSave = computed(() => selectedLayoutConflicts.value.length === 0 && has
 const saveFlash = ref(false)
 const showTimeline = ref(false)
 const showModalTimeline = ref(false)
+const showModalConflicts = ref(false)
 
 function snapshotCurrentLayout() {
   if (!selectedLayout.value) return
@@ -148,41 +149,62 @@ function onKeydown(e) {
                   class="px-2 py-0.5 text-xs font-medium bg-gray-200 text-gray-500 rounded-full"
                 >Disabled</span>
               </div>
-              <button
-                @click="closeModal"
-                class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded transition-colors"
-              >
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
-              </button>
-            </div>
-
-            <!-- Modal body (scrollable) -->
-            <div class="flex-1 overflow-y-auto">
-              <LayoutEditor v-if="selectedLayout" :layout="selectedLayout" />
-
-              <!-- Conflict panel (only when conflicts exist) -->
-              <div v-if="selectedLayoutConflicts.length > 0" class="border-t border-gray-200">
-                <ConflictPanel />
-              </div>
-
-              <!-- Timeline behind a toggle — keeps the modal compact -->
-              <div class="border-t border-gray-200">
+              <div class="flex items-center gap-2">
+                <!-- Conflict toggle -->
                 <button
-                  @click="showModalTimeline = !showModalTimeline"
-                  class="w-full flex items-center justify-between px-5 py-2 text-xs font-medium text-gray-500 hover:bg-gray-50 transition-colors"
+                  v-if="selectedLayoutConflicts.length > 0"
+                  @click="showModalConflicts = !showModalConflicts"
+                  class="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors"
+                  :class="showModalConflicts ? 'bg-amber-100 text-amber-700' : 'bg-amber-50 text-amber-600 hover:bg-amber-100'"
                 >
-                  <span>Schedule preview</span>
-                  <svg
-                    class="w-3.5 h-3.5 transition-transform"
-                    :class="showModalTimeline ? 'rotate-180' : ''"
-                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                  >
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                  <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.168 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
+                  </svg>
+                  {{ selectedLayoutConflicts.length }} conflict{{ selectedLayoutConflicts.length !== 1 ? 's' : '' }}
+                </button>
+
+                <button
+                  @click="closeModal"
+                  class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded transition-colors"
+                >
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                   </svg>
                 </button>
-                <TimelineView v-if="showModalTimeline" />
+              </div>
+            </div>
+
+            <!-- Modal body: editor left, conflicts right -->
+            <div class="flex-1 flex overflow-hidden">
+              <!-- Left: editor + timeline -->
+              <div class="flex-1 overflow-y-auto">
+                <LayoutEditor v-if="selectedLayout" :layout="selectedLayout" />
+
+                <!-- Timeline toggle -->
+                <div class="border-t border-gray-200">
+                  <button
+                    @click="showModalTimeline = !showModalTimeline"
+                    class="w-full flex items-center justify-between px-5 py-2 text-xs font-medium text-gray-500 hover:bg-gray-50 transition-colors"
+                  >
+                    <span>Schedule preview</span>
+                    <svg
+                      class="w-3.5 h-3.5 transition-transform"
+                      :class="showModalTimeline ? 'rotate-180' : ''"
+                      fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    >
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                  </button>
+                  <TimelineView v-if="showModalTimeline" />
+                </div>
+              </div>
+
+              <!-- Right: conflict panel (slides in) -->
+              <div
+                v-if="showModalConflicts && selectedLayoutConflicts.length > 0"
+                class="w-72 border-l border-gray-200 overflow-y-auto shrink-0 bg-gray-50"
+              >
+                <ConflictPanel />
               </div>
             </div>
 
