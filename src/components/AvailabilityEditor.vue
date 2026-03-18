@@ -52,7 +52,7 @@ const isAllDefaults = computed(() => slot.value && slot.value.dateMode === 'fore
 </script>
 
 <template>
-  <div v-if="slot" class="space-y-2">
+  <div v-if="slot" class="space-y-4">
     <!-- Date range -->
     <div>
       <div class="flex items-center justify-between mb-1">

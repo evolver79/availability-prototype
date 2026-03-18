@@ -206,7 +206,7 @@ const timeConflictHints = computed(() => {
 </script>
 
 <template>
-  <div class="px-5 py-4 space-y-3">
+  <div class="px-5 py-5 space-y-4">
     <!-- Header: layout name + schedule actions -->
     <div class="flex items-center gap-2 pb-2 border-b border-gray-200">
       <div v-if="color" class="w-3 h-3 rounded-full shrink-0" :style="{ backgroundColor: color.hex }"></div>
@@ -248,7 +248,7 @@ const timeConflictHints = computed(() => {
     </div>
 
     <!-- Everything below is disabled when schedule is off -->
-    <div :class="isDisabled ? 'opacity-40 pointer-events-none select-none' : ''">
+    <div :class="isDisabled ? 'opacity-40 pointer-events-none select-none' : ''" class="space-y-4">
 
     <!-- Conflict warning -->
     <div
