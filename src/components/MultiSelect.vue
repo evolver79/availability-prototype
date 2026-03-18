@@ -32,8 +32,8 @@ const filteredOptions = computed(() => {
 
 const groupedOptions = computed(() => {
   if (!props.grouped) return [{ label: null, items: filteredOptions.value }]
-  const typeOrder = ['group', 'device']
-  const typeLabels = { group: 'Groups', device: 'Devices' }
+  const typeOrder = ['wildcard', 'group', 'device']
+  const typeLabels = { wildcard: null, group: 'Groups', device: 'Devices' }
   const groups = []
   for (const type of typeOrder) {
     const items = filteredOptions.value.filter((o) => o.type === type)
@@ -50,6 +50,7 @@ const selectedOptions = computed(() =>
 
 function chipColor(opt) {
   if (props.warningIds.has(opt.id)) return 'bg-amber-100 text-amber-800'
+  if (opt.type === 'wildcard') return 'bg-gray-900 text-white'
   if (opt.type === 'group') return 'bg-highlight text-deep-blue'
   return 'bg-blue-light text-blue'
 }
@@ -195,10 +196,22 @@ function onClickOutside(e) {
           </div>
 
           <div class="flex-1 min-w-0">
-            <div class="text-sm text-gray-800 truncate">{{ option.label }}</div>
-            <div v-if="option.sublabel" class="text-xs text-gray-400 truncate">{{ option.sublabel }}</div>
+            <div class="text-sm truncate" :class="option.inUse ? 'text-gray-800' : 'text-gray-800'">
+              {{ option.label }}
+            </div>
+            <div v-if="option.sublabel" class="text-xs truncate" :class="option.inUse ? 'text-amber-500' : 'text-gray-400'">
+              {{ option.sublabel }}
+            </div>
           </div>
 
+          <!-- In-use indicator -->
+          <span v-if="option.inUse && !modelValue.includes(option.id)" class="shrink-0">
+            <svg class="w-3.5 h-3.5 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+            </svg>
+          </span>
+
+          <!-- Conflict warning -->
           <span v-if="warningIds.has(option.id) && modelValue.includes(option.id)" class="shrink-0" title="Involved in a conflict">
             <svg class="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
               <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.168 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>

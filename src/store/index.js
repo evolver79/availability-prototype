@@ -3,238 +3,198 @@ import { DEVICES, GROUPS, LAYOUT_COLORS } from './data.js'
 import { detectConflicts, isSlotActiveOnDate } from '../composables/conflictEngine.js'
 
 const DEFAULT_LAYOUT_ID = 'l-default'
+const DEFAULT_SCHEDULE_ID = 'sch-default'
+const TODAY = '2026-03-18'
+const NOW_HOUR = 9
 
-let nextLayoutId = 6
-let nextSlotId = 6
+let nextLayoutId = 7
+let nextScheduleId = 6
 
 const store = reactive({
   devices: [...DEVICES],
   groups: [...GROUPS],
 
+  // Layouts are just content containers — no scheduling info
   layouts: [
+    { id: DEFAULT_LAYOUT_ID, name: 'Default', colorIndex: 0, isDefault: true },
+    { id: 'l2', name: 'Påske', colorIndex: 1, isDefault: false },
+    { id: 'l3', name: 'Bryllup', colorIndex: 2, isDefault: false },
+    { id: 'l4', name: 'Sandefjord Bredbånd', colorIndex: 3, isDefault: false },
+    { id: 'l5', name: 'Vinterkampanje', colorIndex: 4, isDefault: false },
+    { id: 'l6', name: 'My new campaign', colorIndex: 5, isDefault: false },
+  ],
+
+  // Schedules connect layouts to devices + time
+  schedules: [
     {
-      id: DEFAULT_LAYOUT_ID,
-      name: 'Default',
-      colorIndex: 0,
-      isDefault: true, // cannot be deleted; acts as fallback
-      enabled: true,   // default is always enabled
+      id: DEFAULT_SCHEDULE_ID,
+      layoutId: DEFAULT_LAYOUT_ID,
       targetTv: true,
       targetWeb: true,
       deviceIds: [],
       groupIds: [],
-      slots: [
-        {
-          id: 's1',
-          dateMode: 'forever',
-          startDate: null,
-          endDate: null,
-          startHour: 0,
-          endHour: 24,
-          days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-          repeatMode: 'daily',
-          repeatInterval: null,
-          durationDays: null,
-        },
-      ],
+      enabled: true,
+      isDefault: true,
+      slot: {
+        dateMode: 'forever', startDate: null, endDate: null,
+        startHour: 0, endHour: 24,
+        days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        repeatMode: 'daily', repeatInterval: null, durationDays: null,
+      },
     },
     {
-      id: 'l2',
-      name: 'Påske',
-      colorIndex: 1,
-      isDefault: false,
-      enabled: true,
+      id: 'sch2',
+      layoutId: 'l2',
       targetTv: true,
       targetWeb: false,
       deviceIds: ['d1', 'd2'],
       groupIds: [],
-      slots: [
-        {
-          id: 's2',
-          dateMode: 'forever',
-          startDate: null,
-          endDate: null,
-          startHour: 6,
-          endHour: 9,
-          days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-          repeatMode: 'weekly',
-          repeatInterval: null,
-          durationDays: null,
-        },
-      ],
+      enabled: true,
+      isDefault: false,
+      slot: {
+        dateMode: 'forever', startDate: null, endDate: null,
+        startHour: 6, endHour: 9,
+        days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        repeatMode: 'weekly', repeatInterval: null, durationDays: null,
+      },
     },
     {
-      id: 'l3',
-      name: 'Bryllup',
-      colorIndex: 2,
-      isDefault: false,
-      enabled: true,
+      id: 'sch3',
+      layoutId: 'l3',
       targetTv: true,
       targetWeb: true,
       deviceIds: ['d3'],
       groupIds: [],
-      slots: [
-        {
-          id: 's3',
-          dateMode: 'forever',
-          startDate: null,
-          endDate: null,
-          startHour: 11,
-          endHour: 14,
-          days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-          repeatMode: 'weekly',
-          repeatInterval: null,
-          durationDays: null,
-        },
-      ],
+      enabled: true,
+      isDefault: false,
+      slot: {
+        dateMode: 'forever', startDate: null, endDate: null,
+        startHour: 11, endHour: 14,
+        days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        repeatMode: 'weekly', repeatInterval: null, durationDays: null,
+      },
     },
     {
-      id: 'l4',
-      name: 'Sandefjord Bredbånd',
-      colorIndex: 3,
-      isDefault: false,
-      enabled: true,
+      id: 'sch4',
+      layoutId: 'l4',
       targetTv: true,
       targetWeb: false,
       deviceIds: [],
       groupIds: ['g2'],
-      slots: [
-        {
-          id: 's4',
-          dateMode: 'forever',
-          startDate: null,
-          endDate: null,
-          startHour: 10,
-          endHour: 18,
-          days: ['Sat', 'Sun'],
-          repeatMode: 'weekly',
-          repeatInterval: null,
-          durationDays: null,
-        },
-      ],
+      enabled: true,
+      isDefault: false,
+      slot: {
+        dateMode: 'forever', startDate: null, endDate: null,
+        startHour: 10, endHour: 18,
+        days: ['Sat', 'Sun'],
+        repeatMode: 'weekly', repeatInterval: null, durationDays: null,
+      },
     },
     {
-      id: 'l5',
-      name: 'Vinterkampanje',
-      colorIndex: 4,
-      isDefault: false,
-      enabled: true,
+      id: 'sch5',
+      layoutId: 'l5',
       targetTv: true,
       targetWeb: true,
       deviceIds: ['d1', 'd3'],
       groupIds: [],
-      slots: [
-        {
-          id: 's5',
-          dateMode: 'dateRange',
-          startDate: '2026-02-01',
-          endDate: '2026-03-16', // expired yesterday
-          startHour: 8,
-          endHour: 20,
-          days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-          repeatMode: 'daily',
-          repeatInterval: null,
-          durationDays: null,
-        },
-      ],
+      enabled: false,
+      isDefault: false,
+      slot: {
+        dateMode: 'dateRange', startDate: '2026-02-01', endDate: '2026-03-17',
+        startHour: 8, endHour: 20,
+        days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        repeatMode: 'daily', repeatInterval: null, durationDays: null,
+      },
     },
   ],
 
-  selectedLayoutId: null,
-
-  // Timeline navigation
+  // UI state
+  editingScheduleId: null,
+  isNewSchedule: false,
   timelineView: 'week',
-  timelineDate: '2026-03-17',
+  timelineDate: TODAY,
 })
 
 // --- Getters ---
 
-export const selectedLayout = computed(() =>
-  store.layouts.find((l) => l.id === store.selectedLayoutId) || null
+export const editingSchedule = computed(() =>
+  store.schedules.find((s) => s.id === store.editingScheduleId) || null
 )
 
-// Only check conflicts between enabled, non-default, non-expired layouts
-export const conflicts = computed(() => {
-  const active = store.layouts.filter((l) => !l.isDefault && l.enabled && !isExpired(l))
-  return detectConflicts(active, store.groups, store.devices)
-})
-
-// Check conflicts that WOULD exist if a specific layout were enabled
-export function getConflictsIfEnabled(layoutId) {
-  const layout = store.layouts.find((l) => l.id === layoutId)
-  if (!layout) return []
-  const active = store.layouts.filter((l) => !l.isDefault && !isExpired(l) && (l.enabled || l.id === layoutId))
-  const all = detectConflicts(active, store.groups, store.devices)
-  return all.filter((c) => c.layoutA.id === layoutId || c.layoutB.id === layoutId)
-}
-
-export function toggleEnabled(id) {
-  const layout = store.layouts.find((l) => l.id === id)
-  if (!layout || layout.isDefault) return
-  layout.enabled = !layout.enabled
-}
-
-// Reorder: move a layout to a new index (default layout always stays at 0)
-export function reorderLayout(fromId, toId) {
-  const fromIdx = store.layouts.findIndex((l) => l.id === fromId)
-  const toIdx = store.layouts.findIndex((l) => l.id === toId)
-  if (fromIdx < 0 || toIdx < 0) return
-  if (store.layouts[fromIdx].isDefault || store.layouts[toIdx].isDefault) return
-  const [item] = store.layouts.splice(fromIdx, 1)
-  store.layouts.splice(toIdx, 0, item)
-}
-
-// Check if a layout is active right now (mock: today = 2026-03-17, hour = 9)
-export function isActiveNow(layout) {
-  if (layout.isDefault) return false
-  if (!layout.enabled || isExpired(layout)) return false
-  if (layout.slots.length === 0) return false
-  const slot = layout.slots[0]
-  if (!isSlotActiveOnDate(slot, '2026-03-17')) return false
-  return 9 >= slot.startHour && 9 < slot.endHour
-}
-
-// Check if enabling a layout would cause conflicts
-export function canEnable(id) {
-  return getConflictsIfEnabled(id).length === 0
+export function getLayout(id) {
+  return store.layouts.find((l) => l.id === id)
 }
 
 export function getLayoutColor(layout) {
   return LAYOUT_COLORS[layout.colorIndex % LAYOUT_COLORS.length]
 }
 
-export function resolveDeviceIds(layout) {
-  if (!layout.targetTv) return new Set()
-  // No specific selection = all devices
-  if (layout.deviceIds.length === 0 && layout.groupIds.length === 0) {
+export function getLayoutForSchedule(schedule) {
+  return store.layouts.find((l) => l.id === schedule.layoutId)
+}
+
+export function schedulesForLayout(layoutId) {
+  return store.schedules.filter((s) => s.layoutId === layoutId)
+}
+
+export function activeScheduleCount(layoutId) {
+  return store.schedules.filter((s) => s.layoutId === layoutId && s.enabled && !s.isDefault && !isScheduleExpired(s)).length
+}
+
+export function isLayoutScheduled(layoutId) {
+  return store.schedules.some((s) => s.layoutId === layoutId && !s.isDefault)
+}
+
+export function isLayoutActiveNow(layoutId) {
+  return store.schedules.some((s) => {
+    if (s.layoutId !== layoutId || !s.enabled || s.isDefault || isScheduleExpired(s)) return false
+    if (!isSlotActiveOnDate(s.slot, TODAY)) return false
+    return NOW_HOUR >= s.slot.startHour && NOW_HOUR < s.slot.endHour
+  })
+}
+
+export function isScheduleExpired(schedule) {
+  if (schedule.isDefault) return false
+  const slot = schedule.slot
+  if (slot.dateMode === 'forever' || slot.dateMode === 'fromDate') return false
+  if (!slot.endDate) return false
+  return slot.endDate < TODAY
+}
+
+export function resolveScheduleDeviceIds(schedule) {
+  if (!schedule.targetTv) return new Set()
+  if (schedule.deviceIds.length === 0 && schedule.groupIds.length === 0) {
     return new Set(store.devices.map((d) => d.id))
   }
-  const ids = new Set(layout.deviceIds)
-  for (const gid of layout.groupIds) {
+  const ids = new Set(schedule.deviceIds)
+  for (const gid of schedule.groupIds) {
     const group = store.groups.find((g) => g.id === gid)
     if (group) group.deviceIds.forEach((did) => ids.add(did))
   }
   return ids
 }
 
-export function isDefaultLayout(id) {
-  return id === DEFAULT_LAYOUT_ID
+// A schedule is "complete" enough to participate in conflict checks
+function isScheduleConfigured(s) {
+  if (!s.targetTv && !s.targetWeb) return false
+  const hasTvDevices = s.targetTv && (s.deviceIds.length > 0 || s.groupIds.length > 0)
+  if (!hasTvDevices && !s.targetWeb) return false
+  return true
 }
 
-// Check if a layout's availability has fully expired (end date in the past)
-export function isExpired(layout) {
-  if (layout.isDefault) return false
-  if (layout.slots.length === 0) return false
-  const slot = layout.slots[0]
-  if (slot.dateMode === 'forever' || slot.dateMode === 'fromDate') return false
-  if (!slot.endDate) return false
-  return slot.endDate < '2026-03-17' // today
+// Conflicts between enabled, non-default, non-expired, configured schedules
+export const conflicts = computed(() => {
+  const active = store.schedules.filter((s) => !s.isDefault && s.enabled && !isScheduleExpired(s) && isScheduleConfigured(s))
+  return detectConflicts(active, store.groups, store.devices, store.layouts)
+})
+
+export function getConflictsForSchedule(scheduleId) {
+  return conflicts.value.filter(
+    (c) => c.scheduleA.id === scheduleId || c.scheduleB.id === scheduleId
+  )
 }
 
-// --- Actions ---
-
-export function selectLayout(id) {
-  store.selectedLayoutId = id
-}
+// --- Layout Actions ---
 
 export function createLayout() {
   const id = `l${nextLayoutId++}`
@@ -243,44 +203,21 @@ export function createLayout() {
     name: 'New Layout',
     colorIndex: store.layouts.length % LAYOUT_COLORS.length,
     isDefault: false,
-    enabled: true,
-    targetTv: false,
-    targetWeb: false,
-    deviceIds: [],
-    groupIds: [],
-    slots: [
-      {
-        id: `s${nextSlotId++}`,
-        dateMode: 'forever',
-        startDate: null,
-        endDate: null,
-        startHour: 12,
-        endHour: 12,
-        days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-        repeatMode: 'daily',
-        repeatInterval: null,
-        durationDays: null,
-      },
-    ],
   }
   store.layouts.push(layout)
-  store.selectedLayoutId = id
   return layout
 }
 
 export function deleteLayout(id) {
-  // Cannot delete the default layout
   if (id === DEFAULT_LAYOUT_ID) return
   const idx = store.layouts.findIndex((l) => l.id === id)
   if (idx !== -1) store.layouts.splice(idx, 1)
-  if (store.selectedLayoutId === id) store.selectedLayoutId = null
-}
-
-// Replace a layout's data with a snapshot (for cancel/undo)
-export function restoreLayout(id, snapshot) {
-  const layout = store.layouts.find((l) => l.id === id)
-  if (!layout) return
-  Object.assign(layout, snapshot)
+  // Also delete all schedules for this layout
+  store.schedules = store.schedules.filter((s) => s.layoutId !== id)
+  if (store.editingScheduleId) {
+    const sch = store.schedules.find((s) => s.id === store.editingScheduleId)
+    if (!sch) store.editingScheduleId = null
+  }
 }
 
 export function updateLayout(id, updates) {
@@ -288,50 +225,69 @@ export function updateLayout(id, updates) {
   if (layout) Object.assign(layout, updates)
 }
 
-export function addSlot(layoutId) {
-  const layout = store.layouts.find((l) => l.id === layoutId)
-  if (!layout) return
-  const slot = {
-    id: `s${nextSlotId++}`,
-    dateMode: 'forever',
-    startDate: null,
-    endDate: null,
-    startHour: 9,
-    endHour: 17,
-    days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-    repeatMode: 'daily',
-    repeatInterval: null,
-    durationDays: null,
+// --- Schedule Actions ---
+
+export function createSchedule(layoutId) {
+  const id = `sch${nextScheduleId++}`
+  const schedule = {
+    id,
+    layoutId,
+    targetTv: false,
+    targetWeb: false,
+    deviceIds: [],
+    groupIds: [],
+    enabled: true,
+    isDefault: false,
+    slot: {
+      dateMode: 'forever', startDate: null, endDate: null,
+      startHour: 0, endHour: 24,
+      days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+      repeatMode: 'daily', repeatInterval: null, durationDays: null,
+    },
   }
-  layout.slots.push(slot)
-  return slot
+  store.schedules.push(schedule)
+  store.editingScheduleId = id
+  store.isNewSchedule = true
+  return schedule
 }
 
-export function removeSlot(layoutId, slotId) {
-  const layout = store.layouts.find((l) => l.id === layoutId)
-  if (!layout) return
-  const idx = layout.slots.findIndex((s) => s.id === slotId)
-  if (idx !== -1) layout.slots.splice(idx, 1)
+export function deleteSchedule(id) {
+  if (id === DEFAULT_SCHEDULE_ID) return
+  store.schedules = store.schedules.filter((s) => s.id !== id)
+  if (store.editingScheduleId === id) store.editingScheduleId = null
 }
 
-export function updateSlot(layoutId, slotId, updates) {
-  const layout = store.layouts.find((l) => l.id === layoutId)
-  if (!layout) return
-  const slot = layout.slots.find((s) => s.id === slotId)
-  if (slot) Object.assign(slot, updates)
+export function updateSchedule(id, updates) {
+  const schedule = store.schedules.find((s) => s.id === id)
+  if (schedule) Object.assign(schedule, updates)
 }
 
-export function removeDeviceFromLayout(layoutId, deviceId) {
-  const layout = store.layouts.find((l) => l.id === layoutId)
-  if (!layout) return
-  layout.deviceIds = layout.deviceIds.filter((id) => id !== deviceId)
+export function updateScheduleSlot(id, slotUpdates) {
+  const schedule = store.schedules.find((s) => s.id === id)
+  if (schedule) Object.assign(schedule.slot, slotUpdates)
 }
 
-export function removeGroupFromLayout(layoutId, groupId) {
-  const layout = store.layouts.find((l) => l.id === layoutId)
-  if (!layout) return
-  layout.groupIds = layout.groupIds.filter((id) => id !== groupId)
+export function restoreSchedule(id, snapshot) {
+  const schedule = store.schedules.find((s) => s.id === id)
+  if (schedule) Object.assign(schedule, snapshot)
 }
+
+export function openScheduleModal(scheduleId) {
+  store.editingScheduleId = scheduleId
+  store.isNewSchedule = false
+}
+
+export function closeScheduleModal() {
+  store.editingScheduleId = null
+  store.isNewSchedule = false
+}
+
+export function toggleScheduleEnabled(id) {
+  const schedule = store.schedules.find((s) => s.id === id)
+  if (schedule && !schedule.isDefault) schedule.enabled = !schedule.enabled
+}
+
+// --- Timeline ---
 
 export function setTimelineView(view) {
   store.timelineView = view
@@ -347,4 +303,4 @@ export function navigateTimeline(days) {
   store.timelineDate = d.toISOString().slice(0, 10)
 }
 
-export { store }
+export { store, TODAY, NOW_HOUR, DEFAULT_LAYOUT_ID, DEFAULT_SCHEDULE_ID }

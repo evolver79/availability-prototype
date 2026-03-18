@@ -1,81 +1,49 @@
 <script setup>
-/**
- * Compact Availability Editor.
- * - Date range + time on one row when possible
- * - Repeat pattern collapsed when it's the default ("daily")
- * - Day-of-week only shown for weekly mode
- * - No section wrapper, no uppercase headers — just inline labels
- */
-import { computed, ref, watchEffect } from 'vue'
-import { addSlot, updateSlot } from '../store/index.js'
+import { computed, ref } from 'vue'
+import { updateScheduleSlot } from '../store/index.js'
 import { DAYS, DATE_MODES, REPEAT_MODES } from '../store/data.js'
 import DateRangePicker from './DateRangePicker.vue'
 import TimeRangeSlider from './TimeRangeSlider.vue'
 
 const props = defineProps({
-  layout: { type: Object, required: true },
+  schedule: { type: Object, required: true },
 })
 
-watchEffect(() => {
-  if (props.layout.slots.length === 0) addSlot(props.layout.id)
-})
-
-const slot = computed(() => props.layout.slots[0])
-
-// Show advanced repeat options only when user has changed from default or clicks to expand
+const slot = computed(() => props.schedule.slot)
 const showRepeat = ref(false)
 const isNonDefaultRepeat = computed(() => slot.value && slot.value.repeatMode !== 'daily')
 
 function toggleDay(day) {
-  if (!slot.value) return
   const days = [...slot.value.days]
   const idx = days.indexOf(day)
   if (idx === -1) days.push(day)
   else if (days.length > 1) days.splice(idx, 1)
-  updateSlot(props.layout.id, slot.value.id, { days })
-}
-
-function setStartHour(value) {
-  const h = parseInt(value)
-  if (slot.value && h < slot.value.endHour) updateSlot(props.layout.id, slot.value.id, { startHour: h })
-}
-
-function setEndHour(value) {
-  const h = parseInt(value)
-  if (slot.value && h > slot.value.startHour) updateSlot(props.layout.id, slot.value.id, { endHour: h })
+  updateScheduleSlot(props.schedule.id, { days })
 }
 
 function setDateMode(value) {
-  if (!slot.value) return
   const updates = { dateMode: value }
   if (value === 'forever') { updates.startDate = null; updates.endDate = null }
   else if (value === 'untilDate') { updates.startDate = null; if (!slot.value.endDate) updates.endDate = '2026-06-30' }
-  else if (value === 'fromDate') { updates.endDate = null; if (!slot.value.startDate) updates.startDate = '2026-03-17' }
-  else if (value === 'dateRange') { if (!slot.value.startDate) updates.startDate = '2026-03-17'; if (!slot.value.endDate) updates.endDate = '2026-06-30' }
-  updateSlot(props.layout.id, slot.value.id, updates)
+  else if (value === 'fromDate') { updates.endDate = null; if (!slot.value.startDate) updates.startDate = '2026-03-18' }
+  else if (value === 'dateRange') { if (!slot.value.startDate) updates.startDate = '2026-03-18'; if (!slot.value.endDate) updates.endDate = '2026-06-30' }
+  updateScheduleSlot(props.schedule.id, updates)
 }
 
 function setRepeatMode(value) {
-  if (!slot.value) return
   const updates = { repeatMode: value }
   if (value === 'everyNDays' && !slot.value.repeatInterval) updates.repeatInterval = 3
   if (value === 'duration' && !slot.value.durationDays) updates.durationDays = 7
   if (value === 'weekly' && slot.value.days.length === 0) updates.days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
-  updateSlot(props.layout.id, slot.value.id, updates)
-}
-
-function onStartDate(val) { if (slot.value) updateSlot(props.layout.id, slot.value.id, { startDate: val }) }
-function onEndDate(val) { if (slot.value) updateSlot(props.layout.id, slot.value.id, { endDate: val }) }
-
-function formatHour(h) {
-  return `${String(h).padStart(2, '0')}:00`
+  updateScheduleSlot(props.schedule.id, updates)
 }
 
 function resetAll() {
-  if (!slot.value) return
-  updateSlot(props.layout.id, slot.value.id, { dateMode: 'forever', startDate: null, endDate: null, startHour: 0, endHour: 24, repeatMode: 'daily' })
+  updateScheduleSlot(props.schedule.id, { dateMode: 'forever', startDate: null, endDate: null, startHour: 0, endHour: 24, repeatMode: 'daily' })
   showRepeat.value = false
 }
+
+function formatHour(h) { return `${String(h).padStart(2, '0')}:00` }
 
 const showStart = computed(() => slot.value && (slot.value.dateMode === 'fromDate' || slot.value.dateMode === 'dateRange'))
 const showEnd = computed(() => slot.value && (slot.value.dateMode === 'untilDate' || slot.value.dateMode === 'dateRange'))
@@ -89,88 +57,62 @@ const isAllDefaults = computed(() => slot.value && slot.value.dateMode === 'fore
     <div>
       <div class="flex items-center justify-between mb-1">
         <label class="text-xs text-gray-500">When</label>
-        <button
-          v-if="!isAllDefaults"
-          @click="resetAll"
-          class="text-xs text-blue hover:text-blue transition-colors"
-        >Reset all</button>
+        <button v-if="!isAllDefaults" @click="resetAll" class="text-xs text-blue hover:text-blue transition-colors">Reset all</button>
       </div>
       <div class="flex items-center gap-2">
-        <select
-          :value="slot.dateMode"
-          @change="setDateMode($event.target.value)"
-          class="text-sm bg-white border border-gray-200 rounded-md px-2 py-1 h-[30px] focus:outline-none focus:ring-1 focus:ring-blue shrink-0"
-        >
+        <select :value="slot.dateMode" @change="setDateMode($event.target.value)"
+          class="text-sm bg-white border border-gray-200 rounded-md px-2 py-1 h-[30px] focus:outline-none focus:ring-1 focus:ring-blue shrink-0">
           <option v-for="opt in DATE_MODES" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
-        <DateRangePicker
-          v-if="showDatePicker"
-          :startDate="slot.startDate"
-          :endDate="slot.endDate"
-          :showStart="showStart"
-          :showEnd="showEnd"
-          @update:startDate="onStartDate"
-          @update:endDate="onEndDate"
+        <DateRangePicker v-if="showDatePicker"
+          :startDate="slot.startDate" :endDate="slot.endDate" :showStart="showStart" :showEnd="showEnd"
+          @update:startDate="(v) => updateScheduleSlot(schedule.id, { startDate: v })"
+          @update:endDate="(v) => updateScheduleSlot(schedule.id, { endDate: v })"
         />
       </div>
     </div>
 
-    <!-- Time of day -->
+    <!-- Time -->
     <div>
       <label class="text-xs text-gray-500 mb-1 block">Time</label>
       <TimeRangeSlider
-        :startHour="slot.startHour"
-        :endHour="slot.endHour"
-        @update:startHour="(h) => updateSlot(layout.id, slot.id, { startHour: h })"
-        @update:endHour="(h) => updateSlot(layout.id, slot.id, { endHour: h })"
+        :startHour="slot.startHour" :endHour="slot.endHour"
+        @update:startHour="(h) => updateScheduleSlot(schedule.id, { startHour: h })"
+        @update:endHour="(h) => updateScheduleSlot(schedule.id, { endHour: h })"
       />
     </div>
 
-    <!-- Repeat: collapsed by default when "daily", shown inline otherwise -->
+    <!-- Repeat -->
     <div v-if="isNonDefaultRepeat || showRepeat">
       <div class="flex items-center gap-2 flex-wrap">
         <label class="text-xs text-gray-500">Repeat</label>
         <select :value="slot.repeatMode" @change="setRepeatMode($event.target.value)"
-          class="text-sm bg-white border border-gray-200 rounded-md px-2 py-1 h-[30px] focus:outline-none focus:ring-1 focus:ring-blue"
-        >
+          class="text-sm bg-white border border-gray-200 rounded-md px-2 py-1 h-[30px] focus:outline-none focus:ring-1 focus:ring-blue">
           <option v-for="opt in REPEAT_MODES" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
-
         <template v-if="slot.repeatMode === 'everyNDays'">
           <span class="text-xs text-gray-500">every</span>
           <input type="number" :value="slot.repeatInterval"
-            @input="updateSlot(layout.id, slot.id, { repeatInterval: parseInt($event.target.value) || 1 })"
-            min="1" max="365" class="w-14 text-sm bg-white border border-gray-200 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue"
-          />
+            @input="updateScheduleSlot(schedule.id, { repeatInterval: parseInt($event.target.value) || 1 })"
+            min="1" max="365" class="w-14 text-sm bg-white border border-gray-200 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue" />
           <span class="text-xs text-gray-500">days</span>
         </template>
-
         <template v-if="slot.repeatMode === 'duration'">
           <span class="text-xs text-gray-500">for</span>
           <input type="number" :value="slot.durationDays"
-            @input="updateSlot(layout.id, slot.id, { durationDays: parseInt($event.target.value) || 1 })"
-            min="1" max="365" class="w-14 text-sm bg-white border border-gray-200 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue"
-          />
+            @input="updateScheduleSlot(schedule.id, { durationDays: parseInt($event.target.value) || 1 })"
+            min="1" max="365" class="w-14 text-sm bg-white border border-gray-200 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue" />
           <span class="text-xs text-gray-500">days</span>
         </template>
       </div>
-
-      <!-- Day-of-week (weekly only) -->
       <div v-if="slot.repeatMode === 'weekly'" class="flex gap-1 mt-1.5">
-        <button
-          v-for="day in DAYS" :key="day"
-          @click="toggleDay(day)"
+        <button v-for="day in DAYS" :key="day" @click="toggleDay(day)"
           class="w-8 h-6 rounded text-xs font-medium transition-colors"
           :class="slot.days.includes(day) ? 'bg-blue text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'"
         >{{ day.slice(0, 2) }}</button>
       </div>
     </div>
-
-    <!-- "Customize repeat" link when collapsed -->
-    <button
-      v-if="!isNonDefaultRepeat && !showRepeat"
-      @click="showRepeat = true"
-      class="text-xs text-blue hover:text-blue transition-colors"
-    >Customize repeat pattern...</button>
+    <button v-if="!isNonDefaultRepeat && !showRepeat" @click="showRepeat = true"
+      class="text-xs text-blue hover:text-blue transition-colors">Customize repeat pattern...</button>
   </div>
 </template>

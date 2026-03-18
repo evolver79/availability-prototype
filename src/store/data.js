@@ -20,6 +20,7 @@ export const GROUPS = [
   { id: 'g3', name: 'group-3', deviceIds: ['d4', 'd5'] },
   { id: 'g4', name: 'group-4', deviceIds: ['d1', 'd3', 'd7', 'd8'] },
   { id: 'g5', name: 'group-5', deviceIds: ['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8'] },
+  { id: 'g6', name: 'group-6', deviceIds: ['d7', 'd8'] },
 ]
 
 export const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']

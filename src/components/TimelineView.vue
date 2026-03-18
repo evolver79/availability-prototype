@@ -1,73 +1,57 @@
 <script setup>
 /**
- * Horizontal Timeline — compact Gantt-style schedule view.
- *
- * Key UX: the timeline always covers ALL dates where any layout has availability.
- * You scroll horizontally to reach any date. No content is ever clipped or hidden.
- *
- * - Day zoom: x-axis = full 24 hours, scrollable
- * - Week zoom: x-axis = all relevant dates at 80px/day
- * - Month zoom: x-axis = all relevant dates at 28px/day (compact)
- * - Open-ended layouts extend to a sensible horizon (90 days out)
+ * Device Timeline — horizontal Gantt with rows = devices.
+ * Each row shows schedule bars colored by their parent layout.
+ * Default layout fills as a faded background.
  */
 import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import {
   store,
   conflicts,
-  selectLayout,
+  getLayout,
   getLayoutColor,
-  resolveDeviceIds,
-  updateSlot,
+  resolveScheduleDeviceIds,
+  openScheduleModal,
   setTimelineView,
+  navigateTimeline,
+  TODAY,
+  NOW_HOUR,
+  DEFAULT_SCHEDULE_ID,
 } from '../store/index.js'
 import { DAYS } from '../store/data.js'
-import { isSlotActiveOnDate, getConflictsForLayout } from '../composables/conflictEngine.js'
+import { isSlotActiveOnDate } from '../composables/conflictEngine.js'
 
-// --- Constants ---
 const ROW_HEIGHT = 28
 const ROW_GAP = 4
 const HEADER_HEIGHT = 24
 const HOUR_WIDTH = 40
 const DAY_WIDTH_WEEK = 80
 const DAY_WIDTH_MONTH = 28
-const OPEN_END_HORIZON_DAYS = 90 // how far out to render open-ended schedules
-const TODAY = '2026-03-17'        // mocked "today"
-
-const props = defineProps({
-  compact: { type: Boolean, default: false },
-})
+const OPEN_END_HORIZON_DAYS = 90
 
 const scrollContainer = ref(null)
-
 const zoomLevels = ['day', 'week', 'month']
 
-// --- Compute the full date range across all layouts ---
-// Finds the earliest and latest dates any slot is active,
-// then generates the complete array of dates between them.
+// --- Date range ---
 const dateRange = computed(() => {
   const today = new Date(TODAY + 'T00:00:00')
   let earliest = new Date(today)
   let latest = new Date(today)
 
-  // Expand range based on all slots across all layouts
-  for (const layout of store.layouts) {
-    for (const slot of layout.slots) {
-      const start = getSlotEarliestDate(slot, today)
-      const end = getSlotLatestDate(slot, today)
-      if (start < earliest) earliest = new Date(start)
-      if (end > latest) latest = new Date(end)
-    }
+  for (const sch of store.schedules) {
+    if (sch.isDefault) continue
+    const slot = sch.slot
+    const start = getSlotStart(slot, today)
+    const end = getSlotEnd(slot, today)
+    if (start < earliest) earliest = new Date(start)
+    if (end > latest) latest = new Date(end)
   }
 
-  // Add some padding: 7 days before earliest, 7 after latest
   earliest.setDate(earliest.getDate() - 7)
   latest.setDate(latest.getDate() + 7)
-
-  // Align earliest to Monday
   const dayIdx = earliest.getDay() === 0 ? 6 : earliest.getDay() - 1
   earliest.setDate(earliest.getDate() - dayIdx)
 
-  // Build the full date array
   const dates = []
   const cursor = new Date(earliest)
   while (cursor <= latest) {
@@ -77,33 +61,22 @@ const dateRange = computed(() => {
   return dates
 })
 
-function getSlotEarliestDate(slot, today) {
+function getSlotStart(slot, today) {
   if (slot.dateMode === 'forever' || slot.dateMode === 'untilDate') return today
-  if (slot.startDate) return new Date(slot.startDate + 'T00:00:00')
-  return today
+  return slot.startDate ? new Date(slot.startDate + 'T00:00:00') : today
 }
 
-function getSlotLatestDate(slot, today) {
+function getSlotEnd(slot, today) {
   if (slot.dateMode === 'forever' || slot.dateMode === 'fromDate') {
-    // Open-ended: use horizon
-    const horizon = new Date(today)
-    horizon.setDate(horizon.getDate() + OPEN_END_HORIZON_DAYS)
-    return horizon
+    const h = new Date(today); h.setDate(h.getDate() + OPEN_END_HORIZON_DAYS); return h
   }
-  if (slot.endDate) return new Date(slot.endDate + 'T00:00:00')
-  const horizon = new Date(today)
-  horizon.setDate(horizon.getDate() + OPEN_END_HORIZON_DAYS)
-  return horizon
+  return slot.endDate ? new Date(slot.endDate + 'T00:00:00') : new Date(today)
 }
 
-// For day view, we show a single day's 24 hours — pick the focused date
 const focusedDateStr = computed(() => store.timelineDate)
 
-// The dates shown in week/month view = the full computed range
 const visibleDates = computed(() => {
-  if (store.timelineView === 'day') {
-    return [makeDateInfo(new Date(focusedDateStr.value + 'T00:00:00'))]
-  }
+  if (store.timelineView === 'day') return [makeDateInfo(new Date(focusedDateStr.value + 'T00:00:00'))]
   return dateRange.value
 })
 
@@ -120,7 +93,6 @@ function makeDateInfo(date) {
   }
 }
 
-// --- Timeline dimensions ---
 const cellWidth = computed(() => {
   if (store.timelineView === 'day') return HOUR_WIDTH
   if (store.timelineView === 'month') return DAY_WIDTH_MONTH
@@ -132,284 +104,222 @@ const timelineWidth = computed(() => {
   return visibleDates.value.length * cellWidth.value
 })
 
-// --- Header tick marks ---
+// --- Header ticks ---
 const headerTicks = computed(() => {
   if (store.timelineView === 'day') {
     const ticks = []
-    for (let h = 0; h < 24; h += 2) {
-      ticks.push({ label: formatHour(h), x: h * HOUR_WIDTH, isToday: false, isMajor: h % 6 === 0 })
-    }
+    for (let h = 0; h < 24; h += 2) ticks.push({ label: formatHour(h), x: h * HOUR_WIDTH, isToday: false, isMajor: h % 6 === 0 })
     return ticks
   }
-
   return visibleDates.value.map((d, i) => {
     let label
     if (store.timelineView === 'month') {
-      // Show month name on 1st of month or first visible date, otherwise just day number
       label = d.isFirstOfMonth || i === 0 ? `${d.monthStr} ${d.dayNum}` : (d.isMonday ? `${d.dayNum}` : '')
     } else {
-      // Week zoom: show day name + number
       label = `${d.dayName.slice(0, 2)} ${d.dayNum}`
     }
-    return {
-      label,
-      x: i * cellWidth.value,
-      isToday: d.isToday,
-      isMajor: store.timelineView === 'month' ? (d.isFirstOfMonth || d.isMonday) : true,
+    return { label, x: i * cellWidth.value, isToday: d.isToday, isMajor: store.timelineView === 'month' ? (d.isFirstOfMonth || d.isMonday) : true }
+  })
+})
+
+// --- Group rows ---
+const groupRows = computed(() => {
+  return store.groups.map((group) => {
+    const schedules = store.schedules.filter((sch) => {
+      if (sch.isDefault || !sch.enabled) return false
+      return sch.groupIds.includes(group.id)
+    })
+    const bars = []
+    for (const sch of schedules) {
+      const layout = getLayout(sch.layoutId)
+      if (!layout) continue
+      bars.push(...buildBarsForSchedule(sch, layout, getLayoutColor(layout)))
     }
+    const laneCount = assignLanes(bars)
+    return { id: group.id, name: group.name, isGroup: true, bars, laneCount }
   })
 })
 
-// --- Layout rows ---
-const layoutRows = computed(() => {
-  return store.layouts.map((layout) => {
-    const color = getLayoutColor(layout)
-    const deviceCount = resolveDeviceIds(layout).size
-    const hasConflict = getConflictsForLayout(conflicts.value, layout.id).length > 0
-    const bars = buildBarsForLayout(layout, color)
-    return { layout, color, deviceCount, hasConflict, bars }
+// Assign lanes to bars so overlapping ones don't stack on top of each other
+function assignLanes(bars) {
+  // Sort by left position
+  const sorted = [...bars].sort((a, b) => a.left - b.left)
+  const lanes = [] // each lane is { end: rightmost x of last bar in this lane }
+  for (const bar of sorted) {
+    let placed = false
+    for (let i = 0; i < lanes.length; i++) {
+      if (bar.left >= lanes[i].end) {
+        bar.lane = i
+        lanes[i].end = bar.left + bar.width
+        placed = true
+        break
+      }
+    }
+    if (!placed) {
+      bar.lane = lanes.length
+      lanes.push({ end: bar.left + bar.width })
+    }
+  }
+  return lanes.length
+}
+
+// --- Device rows ---
+const deviceRows = computed(() => {
+  return store.devices.map((device) => {
+    const schedules = store.schedules.filter((sch) => {
+      if (sch.isDefault || !sch.enabled) return false
+      return resolveScheduleDeviceIds(sch).has(device.id)
+    })
+    const bars = []
+    for (const sch of schedules) {
+      const layout = getLayout(sch.layoutId)
+      if (!layout) continue
+      bars.push(...buildBarsForSchedule(sch, layout, getLayoutColor(layout)))
+    }
+    const laneCount = assignLanes(bars)
+    return { id: device.id, name: device.name, isGroup: false, bars, laneCount }
   })
 })
 
-function buildBarsForLayout(layout, color) {
+function isRowTargeted(row) {
+  const editingSch = store.schedules.find(s => s.id === store.editingScheduleId)
+  if (!editingSch) return false
+  if (row.isGroup) return editingSch.groupIds.includes(row.id)
+  return resolveScheduleDeviceIds(editingSch).has(row.id)
+}
+
+// Combined: groups first, then devices. Targeted rows float to top.
+const allRows = computed(() => {
+  const editingSch = store.schedules.find(s => s.id === store.editingScheduleId)
+  const targetedIds = editingSch ? resolveScheduleDeviceIds(editingSch) : new Set()
+  const targetedGroupIds = editingSch ? new Set(editingSch.groupIds) : new Set()
+
+  const sortedGroups = [...groupRows.value].sort((a, b) => {
+    const aTarget = targetedGroupIds.has(a.id) ? 0 : 1
+    const bTarget = targetedGroupIds.has(b.id) ? 0 : 1
+    return aTarget - bTarget
+  })
+
+  const sortedDevices = [...deviceRows.value].sort((a, b) => {
+    const aTarget = targetedIds.has(a.id) ? 0 : 1
+    const bTarget = targetedIds.has(b.id) ? 0 : 1
+    return aTarget - bTarget
+  })
+
+  return [...sortedGroups, ...sortedDevices]
+})
+
+function buildBarsForSchedule(schedule, layout, color) {
   const bars = []
+  const slot = schedule.slot
 
-  for (const slot of layout.slots) {
-    if (store.timelineView === 'day') {
-      const dateStr = visibleDates.value[0]?.dateStr
-      if (!dateStr || !isSlotActiveOnDate(slot, dateStr)) continue
-      const left = slot.startHour * HOUR_WIDTH
-      const right = slot.endHour * HOUR_WIDTH
-      bars.push({
-        key: `${layout.id}-${slot.id}-day`,
-        slotId: slot.id,
-        left,
-        width: right - left,
-        isOpenEnd: false,
-        isOpenStart: false,
-        label: `${formatHour(slot.startHour)}–${formatHour(slot.endHour)}`,
-      })
-    } else {
-      // Find contiguous runs of active dates
-      let runStart = null
-      for (let i = 0; i <= visibleDates.value.length; i++) {
-        const d = visibleDates.value[i]
-        const active = d ? isSlotActiveOnDate(slot, d.dateStr) : false
-
-        if (active && runStart === null) {
-          runStart = i
-        } else if (!active && runStart !== null) {
-          bars.push(makeBar(layout, slot, runStart, i - 1))
-          runStart = null
-        }
+  if (store.timelineView === 'day') {
+    const dateStr = visibleDates.value[0]?.dateStr
+    if (!dateStr || !isSlotActiveOnDate(slot, dateStr)) return bars
+    bars.push({
+      key: `${schedule.id}-day`,
+      scheduleId: schedule.id,
+      layoutName: layout.name,
+      color,
+      left: slot.startHour * HOUR_WIDTH,
+      width: (slot.endHour - slot.startHour) * HOUR_WIDTH,
+      label: `${formatHour(slot.startHour)}–${formatHour(slot.endHour)}`,
+      isOpenEnd: false,
+      isOpenStart: false,
+    })
+  } else {
+    let runStart = null
+    for (let i = 0; i <= visibleDates.value.length; i++) {
+      const d = visibleDates.value[i]
+      const active = d ? isSlotActiveOnDate(slot, d.dateStr) : false
+      if (active && runStart === null) runStart = i
+      else if (!active && runStart !== null) {
+        bars.push(makeBar(schedule, layout, color, runStart, i - 1))
+        runStart = null
       }
     }
   }
   return bars
 }
 
-function makeBar(layout, slot, startIdx, endIdx) {
+function makeBar(schedule, layout, color, startIdx, endIdx) {
   const cw = cellWidth.value
-  const left = startIdx * cw
-  const width = (endIdx - startIdx + 1) * cw
-
-  // Check if schedule extends beyond visible range
+  const slot = schedule.slot
   const firstDate = visibleDates.value[0].dateStr
   const lastDate = visibleDates.value[visibleDates.value.length - 1].dateStr
-  const isOpenStart = startIdx === 0 && isSlotActiveOnDate(slot, shiftDate(firstDate, -1))
-  const isOpenEnd = endIdx === visibleDates.value.length - 1 && isSlotActiveOnDate(slot, shiftDate(lastDate, 1))
-
   return {
-    key: `${layout.id}-${slot.id}-${startIdx}-${endIdx}`,
-    slotId: slot.id,
-    left,
-    width,
-    isOpenStart,
-    isOpenEnd,
+    key: `${schedule.id}-${startIdx}-${endIdx}`,
+    scheduleId: schedule.id,
+    layoutName: layout.name,
+    color,
+    left: startIdx * cw,
+    width: (endIdx - startIdx + 1) * cw,
     label: `${formatHour(slot.startHour)}–${formatHour(slot.endHour)}`,
+    isOpenStart: startIdx === 0 && isSlotActiveOnDate(slot, shiftDate(firstDate, -1)),
+    isOpenEnd: endIdx === visibleDates.value.length - 1 && isSlotActiveOnDate(slot, shiftDate(lastDate, 1)),
   }
 }
 
-// --- Conflict zones ---
-const conflictBars = computed(() => {
-  const bars = []
-  for (const c of conflicts.value) {
-    if (store.timelineView === 'day') {
-      const dateStr = visibleDates.value[0]?.dateStr
-      if (!dateStr) continue
-      if (!isSlotActiveOnDate(c.slotA, dateStr) || !isSlotActiveOnDate(c.slotB, dateStr)) continue
-      bars.push({
-        key: `conflict-${c.id}-day`,
-        left: c.overlapStart * HOUR_WIDTH,
-        width: (c.overlapEnd - c.overlapStart) * HOUR_WIDTH,
-        layoutAId: c.layoutA.id,
-        layoutBId: c.layoutB.id,
-      })
-    } else {
-      for (let i = 0; i < visibleDates.value.length; i++) {
-        const d = visibleDates.value[i]
-        if (!isSlotActiveOnDate(c.slotA, d.dateStr) || !isSlotActiveOnDate(c.slotB, d.dateStr)) continue
-        bars.push({
-          key: `conflict-${c.id}-${d.dateStr}`,
-          left: i * cellWidth.value,
-          width: cellWidth.value,
-          layoutAId: c.layoutA.id,
-          layoutBId: c.layoutB.id,
-        })
-      }
-    }
-  }
-  return bars
-})
-
-function conflictBarsForLayout(layoutId) {
-  return conflictBars.value.filter(
-    (b) => b.layoutAId === layoutId || b.layoutBId === layoutId
-  )
-}
-
-// --- Total height ---
-const totalHeight = computed(() => {
-  return HEADER_HEIGHT + layoutRows.value.length * (ROW_HEIGHT + ROW_GAP) + ROW_GAP
-})
-
-// --- Scroll to "today" on mount and when zoom changes ---
-watch(
-  () => store.timelineView,
-  () => nextTick(scrollToToday),
-  { immediate: true }
-)
-
-function scrollToToday() {
-  if (!scrollContainer.value) return
-  if (store.timelineView === 'day') return // day view is small enough
-
-  const todayIdx = visibleDates.value.findIndex((d) => d.isToday)
-  if (todayIdx === -1) return
-  const todayX = todayIdx * cellWidth.value
-  // Scroll so "today" is roughly 1/3 from the left
-  const offset = Math.max(0, todayX - scrollContainer.value.clientWidth / 3)
-  scrollContainer.value.scrollLeft = offset
-}
-
-// --- Scroll tracking for sticky bar labels ---
+// --- Scroll tracking for sticky labels ---
 const scrollLeft = ref(0)
-
-function onScroll() {
-  if (scrollContainer.value) {
-    scrollLeft.value = scrollContainer.value.scrollLeft
-  }
-}
-
+function onScroll() { if (scrollContainer.value) scrollLeft.value = scrollContainer.value.scrollLeft }
 onMounted(() => scrollContainer.value?.addEventListener('scroll', onScroll))
 onBeforeUnmount(() => scrollContainer.value?.removeEventListener('scroll', onScroll))
 
-// Compute the x position for a bar label so it sticks to the left visible edge of the bar
 function barLabelLeft(bar) {
   return Math.max(bar.left, Math.min(scrollLeft.value, bar.left + bar.width - 120))
 }
 
-// --- Day navigation (day view only) ---
+const SUB_ROW_HEIGHT = 22 // height per lane when multiple lanes
+
+function rowHeight(row) {
+  if (!row.laneCount || row.laneCount <= 1) return ROW_HEIGHT
+  return row.laneCount * SUB_ROW_HEIGHT + 4 // padding
+}
+
+const totalHeight = computed(() => {
+  let h = HEADER_HEIGHT + ROW_GAP
+  for (const row of allRows.value) h += rowHeight(row) + ROW_GAP
+  return h
+})
+
+// --- Scroll to today ---
+watch(() => store.timelineView, () => nextTick(scrollToToday), { immediate: true })
+function scrollToToday() {
+  if (!scrollContainer.value || store.timelineView === 'day') return
+  const todayIdx = visibleDates.value.findIndex((d) => d.isToday)
+  if (todayIdx === -1) return
+  const offset = Math.max(0, todayIdx * cellWidth.value - scrollContainer.value.clientWidth / 3)
+  scrollContainer.value.scrollLeft = offset
+}
+
 function navigateDay(delta) {
   const d = new Date(store.timelineDate + 'T00:00:00')
   d.setDate(d.getDate() + delta)
   store.timelineDate = d.toISOString().slice(0, 10)
 }
 
-// --- Helpers ---
-function formatHour(h) {
-  return `${String(h).padStart(2, '0')}:00`
-}
+function formatHour(h) { return `${String(h).padStart(2, '0')}:00` }
+function shiftDate(dateStr, days) { const d = new Date(dateStr + 'T00:00:00'); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10) }
 
-function shiftDate(dateStr, days) {
-  const d = new Date(dateStr + 'T00:00:00')
-  d.setDate(d.getDate() + days)
-  return d.toISOString().slice(0, 10)
-}
-
-// --- Drag to resize (day view) ---
-const dragging = ref(null)
-
-function startDragRight(layoutId, slotId, endHour, event) {
-  if (store.timelineView !== 'day') return
-  event.preventDefault()
-  event.stopPropagation()
-  dragging.value = { layoutId, slotId, startX: event.clientX, original: endHour }
-
-  const onMove = (e) => {
-    if (!dragging.value) return
-    const dx = e.clientX - dragging.value.startX
-    const newEnd = Math.max(dragging.value.original + Math.round(dx / HOUR_WIDTH), 1)
-    updateSlot(layoutId, slotId, { endHour: Math.min(newEnd, 24) })
-  }
-  const onUp = () => {
-    dragging.value = null
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
-  }
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
-}
-
-function startDragLeft(layoutId, slotId, startHour, event) {
-  if (store.timelineView !== 'day') return
-  event.preventDefault()
-  event.stopPropagation()
-  dragging.value = { layoutId, slotId, startX: event.clientX, original: startHour }
-
-  const onMove = (e) => {
-    if (!dragging.value) return
-    const dx = e.clientX - dragging.value.startX
-    const newStart = Math.max(dragging.value.original + Math.round(dx / HOUR_WIDTH), 0)
-    updateSlot(layoutId, slotId, { startHour: Math.min(newStart, 23) })
-  }
-  const onUp = () => {
-    dragging.value = null
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
-  }
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
-}
-
-// --- Tooltip (Popover API) ---
+// --- Tooltip ---
 const tooltipRef = ref(null)
 const tooltipData = ref(null)
 let tooltipTimer = null
 
-function showTooltip(event, layout, bar) {
+function showTooltip(event, bar) {
   clearTimeout(tooltipTimer)
   const rect = event.currentTarget.getBoundingClientRect()
-  const devices = resolveDeviceIds(layout)
-  const hasSpecific = layout.deviceIds.length > 0 || layout.groupIds.length > 0
-  const targets = []
-  if (layout.targetTv) targets.push('TV')
-  if (layout.targetWeb) targets.push('WEB')
-
-  tooltipData.value = {
-    name: layout.name,
-    time: bar.label,
-    target: targets.join(' + ') || 'No target',
-    devices: layout.targetTv ? (hasSpecific ? `${devices.size} device${devices.size !== 1 ? 's' : ''}` : 'All devices') : null,
-    enabled: layout.enabled,
-    isDefault: layout.isDefault,
-  }
-
+  tooltipData.value = { name: bar.layoutName, time: bar.label }
   nextTick(() => {
     if (!tooltipRef.value) return
     try { tooltipRef.value.showPopover() } catch {}
-    Object.assign(tooltipRef.value.style, {
-      top: (rect.top - 8) + 'px',
-      left: (rect.left + rect.width / 2) + 'px',
-    })
+    Object.assign(tooltipRef.value.style, { top: (rect.top - 8) + 'px', left: (rect.left + rect.width / 2) + 'px' })
   })
 }
 
 function hideTooltip() {
-  tooltipTimer = setTimeout(() => {
-    try { tooltipRef.value?.hidePopover() } catch {}
-    tooltipData.value = null
-  }, 50)
+  tooltipTimer = setTimeout(() => { try { tooltipRef.value?.hidePopover() } catch {}; tooltipData.value = null }, 50)
 }
 </script>
 
@@ -418,208 +328,122 @@ function hideTooltip() {
     <!-- Toolbar -->
     <div class="flex items-center justify-between px-3 py-1.5 border-b border-gray-200 bg-gray-50">
       <div class="flex items-center gap-1.5">
-        <!-- Zoom level toggle -->
-        <button
-          v-for="z in zoomLevels"
-          :key="z"
-          @click="setTimelineView(z)"
+        <button v-for="z in zoomLevels" :key="z" @click="setTimelineView(z)"
           class="px-2 py-1 text-xs font-medium rounded transition-colors capitalize"
           :class="store.timelineView === z ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-200'"
         >{{ z }}</button>
 
-        <!-- Day-view date navigation -->
         <template v-if="store.timelineView === 'day'">
           <div class="w-px h-4 bg-gray-300 mx-1"></div>
-          <button
-            @click="navigateDay(-1)"
-            class="p-0.5 text-gray-500 hover:text-gray-800 hover:bg-gray-200 rounded transition-colors"
-          >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-            </svg>
+          <button @click="navigateDay(-1)" class="p-0.5 text-gray-500 hover:text-gray-800 hover:bg-gray-200 rounded transition-colors">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
           </button>
-          <span class="text-xs text-gray-500 mx-1">
-            {{ visibleDates[0]?.dayName }} {{ visibleDates[0]?.monthStr }} {{ visibleDates[0]?.dayNum }}
-          </span>
-          <button
-            @click="navigateDay(1)"
-            class="p-0.5 text-gray-500 hover:text-gray-800 hover:bg-gray-200 rounded transition-colors"
-          >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-            </svg>
+          <span class="text-xs text-gray-500 mx-1">{{ visibleDates[0]?.dayName }} {{ visibleDates[0]?.monthStr }} {{ visibleDates[0]?.dayNum }}</span>
+          <button @click="navigateDay(1)" class="p-0.5 text-gray-500 hover:text-gray-800 hover:bg-gray-200 rounded transition-colors">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
           </button>
         </template>
       </div>
-
-      <span v-if="store.timelineView === 'day'" class="text-xs text-gray-400">Drag edges to resize</span>
-      <span v-else class="text-xs text-gray-400">Scroll to see all dates</span>
+      <span class="text-xs text-gray-400">{{ store.timelineView === 'day' ? 'Hover for details' : 'Scroll to see all dates' }}</span>
     </div>
 
-    <!-- Horizontal timeline -->
-    <div ref="scrollContainer" class="overflow-x-auto timeline-scroll bg-white" style="min-height: 80px; max-height: 200px;">
+    <!-- Timeline -->
+    <div ref="scrollContainer" class="overflow-x-auto timeline-scroll bg-white" style="min-height: 80px; max-height: 400px;">
       <div class="flex" :style="{ minWidth: (timelineWidth + 120) + 'px', height: totalHeight + 'px' }">
-        <!-- Layout labels (sticky left) -->
+        <!-- Device labels (sticky left) -->
         <div class="w-[120px] shrink-0 border-r border-gray-200 bg-white sticky left-0 z-40">
-          <div :style="{ height: HEADER_HEIGHT + 'px' }" class="border-b border-gray-100"></div>
+          <div :style="{ height: HEADER_HEIGHT + 'px' }" class="border-b border-gray-100 flex items-center px-2 text-[10px] text-gray-400 font-medium">DEVICES</div>
           <div
-            v-for="(row, idx) in layoutRows"
-            :key="row.layout.id"
-            @click="selectLayout(row.layout.id)"
-            class="flex items-center gap-1.5 px-2 cursor-pointer hover:bg-gray-50 transition-colors border-b border-gray-50"
-            :class="store.selectedLayoutId === row.layout.id ? 'bg-blue-light' : ''"
-            :style="{ height: ROW_HEIGHT + 'px', marginTop: ROW_GAP + 'px' }"
+            v-for="row in allRows"
+            :key="row.id"
+            class="flex items-start gap-1.5 px-2 border-b border-gray-50 text-xs font-medium pt-1"
+            :class="[
+              isRowTargeted(row)
+                ? 'text-blue bg-blue-light/30 font-semibold'
+                : row.isGroup ? 'text-gray-500 bg-gray-50 italic' : 'text-gray-700',
+            ]"
+            :style="{ height: rowHeight(row) + 'px', marginTop: ROW_GAP + 'px' }"
           >
-            <div class="w-2 h-2 rounded-full shrink-0" :style="{ backgroundColor: row.color.hex }"></div>
-            <span class="text-xs font-medium text-gray-700 truncate">{{ row.layout.name }}</span>
-            <span
-              v-if="row.hasConflict"
-              class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 conflict-pulse"
-            ></span>
+            <!-- Targeted indicator dot -->
+            <span v-if="isRowTargeted(row)" class="w-1.5 h-1.5 rounded-full bg-blue shrink-0 mt-1"></span>
+            <svg v-else-if="row.isGroup" class="w-3 h-3 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+            </svg>
+            <span class="truncate">{{ row.name }}</span>
           </div>
         </div>
 
-        <!-- Scrollable timeline area -->
+        <!-- Scrollable area -->
         <div class="relative flex-1">
-          <!-- Time header row -->
+          <!-- Header -->
           <div class="relative border-b border-gray-200 sticky top-0 bg-white z-10" :style="{ height: HEADER_HEIGHT + 'px', width: timelineWidth + 'px' }">
             <template v-for="tick in headerTicks" :key="tick.label + tick.x">
-              <div
-                v-if="tick.label"
-                class="absolute top-0 bottom-0 flex items-center text-xs border-l"
-                :class="[
-                  tick.isToday ? 'border-blue text-blue font-semibold' : tick.isMajor ? 'border-gray-200 text-gray-500' : 'border-gray-100 text-gray-400',
-                ]"
-                :style="{ left: tick.x + 'px', paddingLeft: '4px' }"
-              >
-                {{ tick.label }}
-              </div>
-              <!-- Minor tick lines (no label, month view) -->
-              <div
-                v-else
-                class="absolute top-0 bottom-0 border-l border-gray-50"
-                :style="{ left: tick.x + 'px' }"
-              ></div>
+              <div v-if="tick.label" class="absolute top-0 bottom-0 flex items-center text-xs border-l"
+                :class="tick.isToday ? 'border-blue text-blue font-semibold' : tick.isMajor ? 'border-gray-200 text-gray-500' : 'border-gray-100 text-gray-400'"
+                :style="{ left: tick.x + 'px', paddingLeft: '4px' }">{{ tick.label }}</div>
+              <div v-else class="absolute top-0 bottom-0 border-l border-gray-50" :style="{ left: tick.x + 'px' }"></div>
             </template>
           </div>
 
-          <!-- Layout rows + bars -->
+          <!-- Rows -->
           <div class="relative" :style="{ width: timelineWidth + 'px' }">
-            <!-- Vertical grid lines -->
+            <!-- Grid lines -->
             <template v-for="tick in headerTicks" :key="'grid-' + tick.x">
-              <div
-                v-if="tick.isMajor"
-                class="absolute top-0 border-l"
-                :class="tick.isToday ? 'border-blue-100' : 'border-gray-50'"
-                :style="{ left: tick.x + 'px', height: (layoutRows.length * (ROW_HEIGHT + ROW_GAP) + ROW_GAP) + 'px' }"
-              ></div>
+              <div v-if="tick.isMajor" class="absolute top-0 border-l" :class="tick.isToday ? 'border-blue-100' : 'border-gray-50'"
+                :style="{ left: tick.x + 'px', height: (totalHeight - HEADER_HEIGHT) + 'px' }"></div>
             </template>
 
-            <!-- Now line (day view): red vertical at current hour -->
-            <div
-              v-if="store.timelineView === 'day' && visibleDates.some(d => d.isToday)"
+            <!-- Now line (day view) -->
+            <div v-if="store.timelineView === 'day' && visibleDates.some(d => d.isToday)"
               class="absolute top-0 w-[2px] bg-red-500 z-30 pointer-events-none"
-              :style="{
-                left: (9 * HOUR_WIDTH) + 'px',
-                height: (layoutRows.length * (ROW_HEIGHT + ROW_GAP) + ROW_GAP + 4) + 'px',
-              }"
-            >
-              <div class="absolute -top-3 -left-[13px] px-1 py-0.5 bg-red-500 text-white text-[8px] font-bold rounded whitespace-nowrap">
-                09:00
-              </div>
+              :style="{ left: (NOW_HOUR * HOUR_WIDTH) + 'px', height: (allRows.length * (ROW_HEIGHT + ROW_GAP) + ROW_GAP + 4) + 'px' }">
+              <div class="absolute -top-3 -left-[13px] px-1 py-0.5 bg-red-500 text-white text-[8px] font-bold rounded whitespace-nowrap">{{ formatHour(NOW_HOUR) }}</div>
             </div>
 
-            <!-- Today line (week/month view): blue vertical at today's column -->
-            <div
-              v-if="store.timelineView !== 'day' && visibleDates.some(d => d.isToday)"
+            <!-- Today line (week/month) -->
+            <div v-if="store.timelineView !== 'day' && visibleDates.some(d => d.isToday)"
               class="absolute top-0 w-[2px] bg-blue z-30 pointer-events-none"
-              :style="{
-                left: (visibleDates.findIndex(d => d.isToday) * cellWidth) + 'px',
-                height: (layoutRows.length * (ROW_HEIGHT + ROW_GAP) + ROW_GAP) + 'px',
-              }"
-            ></div>
+              :style="{ left: (visibleDates.findIndex(d => d.isToday) * cellWidth) + 'px', height: (totalHeight - HEADER_HEIGHT) + 'px' }"></div>
 
-            <!-- Rows -->
-            <div
-              v-for="(row, idx) in layoutRows"
-              :key="row.layout.id"
-              class="relative"
-              :style="{ height: ROW_HEIGHT + 'px', marginTop: ROW_GAP + 'px' }"
-            >
-              <!-- Conflict highlight bars -->
-              <div
-                v-for="cb in conflictBarsForLayout(row.layout.id)"
-                :key="cb.key"
-                class="absolute top-0 bottom-0 bg-red-50 pointer-events-none z-0"
-                :style="{ left: cb.left + 'px', width: cb.width + 'px' }"
-              >
-                <div class="w-full h-full opacity-40" style="background: repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(239,68,68,0.15) 3px, rgba(239,68,68,0.15) 6px)"></div>
-              </div>
+            <!-- Device rows -->
+            <div v-for="row in allRows" :key="row.id" class="relative" :style="{ height: rowHeight(row) + 'px', marginTop: ROW_GAP + 'px' }">
+              <!-- Conflict background: subtle red when row has multiple lanes -->
+              <div v-if="row.laneCount > 1" class="absolute inset-0 bg-red-50 rounded-sm pointer-events-none z-0"></div>
 
-              <!-- Layout bars -->
-              <div
-                v-for="bar in row.bars"
-                :key="bar.key"
-                @click.stop="selectLayout(row.layout.id)"
-                @mouseenter="showTooltip($event, row.layout, bar)"
+              <!-- Schedule bars — positioned by lane -->
+              <div v-for="bar in row.bars" :key="bar.key"
+                @mouseenter="showTooltip($event, bar)"
                 @mouseleave="hideTooltip"
-                class="absolute top-0.5 bottom-0.5 rounded-sm cursor-pointer transition-shadow hover:shadow-md z-10"
-                :class="[
-                  row.hasConflict ? 'ring-1 ring-amber-400' : '',
-                  store.selectedLayoutId === row.layout.id ? 'ring-2 ring-blue' : '',
-                ]"
+                class="absolute rounded-sm transition-shadow hover:shadow-md z-10"
                 :style="{
                   left: bar.left + 'px',
                   width: bar.width + 'px',
-                  backgroundColor: row.color.hex + '30',
-                  borderLeft: bar.isOpenStart ? 'none' : '3px solid ' + row.color.hex,
+                  top: (row.laneCount > 1 ? bar.lane * SUB_ROW_HEIGHT + 2 : 2) + 'px',
+                  height: (row.laneCount > 1 ? SUB_ROW_HEIGHT - 2 : rowHeight(row) - 4) + 'px',
+                  backgroundColor: bar.color.hex + (row.laneCount > 1 ? '60' : '30'),
+                  borderLeft: bar.isOpenStart ? 'none' : '3px solid ' + bar.color.hex,
                 }"
               >
-                <!-- Left drag handle (day view only) -->
-                <div
-                  v-if="store.timelineView === 'day'"
-                  @mousedown="startDragLeft(row.layout.id, bar.slotId, row.layout.slots.find(s => s.id === bar.slotId)?.startHour || 0, $event)"
-                  class="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-black/10 z-20"
-                ></div>
-
-                <!-- Open-end fade + arrow -->
-                <div
-                  v-if="bar.isOpenEnd"
-                  class="absolute right-0 top-0 bottom-0 w-8 flex items-center justify-end pr-1 pointer-events-none"
-                  :style="{ background: `linear-gradient(to right, transparent, ${row.color.hex}20)` }"
-                >
-                  <svg class="w-3 h-3 opacity-50" :style="{ color: row.color.hex }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                  </svg>
+                <div v-if="bar.isOpenEnd" class="absolute right-0 top-0 bottom-0 w-8 flex items-center justify-end pr-1 pointer-events-none"
+                  :style="{ background: `linear-gradient(to right, transparent, ${bar.color.hex}20)` }">
+                  <svg class="w-3 h-3 opacity-50" :style="{ color: bar.color.hex }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
                 </div>
-
-                <!-- Right drag handle (day view only) -->
-                <div
-                  v-if="store.timelineView === 'day'"
-                  @mousedown="startDragRight(row.layout.id, bar.slotId, row.layout.slots.find(s => s.id === bar.slotId)?.endHour || 24, $event)"
-                  class="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-black/10 z-20"
-                ></div>
               </div>
 
-              <!-- Bar labels: positioned via JS, clipped to bar bounds -->
-              <div
-                v-for="bar in row.bars"
-                :key="'label-' + bar.key"
-                v-show="bar.width > 40"
-                class="absolute top-0 bottom-0 overflow-hidden pointer-events-none z-20"
-                :style="{ left: bar.left + 'px', width: bar.width + 'px' }"
-              >
-                <div
-                  class="absolute top-0 bottom-0 flex items-center"
-                  :style="{ left: (barLabelLeft(bar) - bar.left) + 'px' }"
-                >
+              <!-- Sticky bar labels — positioned by lane -->
+              <div v-for="bar in row.bars" :key="'label-' + bar.key" v-show="bar.width > 40"
+                class="absolute overflow-hidden pointer-events-none z-20"
+                :style="{
+                  left: bar.left + 'px',
+                  width: bar.width + 'px',
+                  top: (row.laneCount > 1 ? bar.lane * SUB_ROW_HEIGHT + 2 : 2) + 'px',
+                  height: (row.laneCount > 1 ? SUB_ROW_HEIGHT - 2 : rowHeight(row) - 4) + 'px',
+                }">
+                <div class="absolute top-0 bottom-0 flex items-center" :style="{ left: (barLabelLeft(bar) - bar.left) + 'px' }">
                   <div class="flex items-center gap-1 px-1.5 overflow-hidden" :style="{ maxWidth: Math.min(bar.width, 200) + 'px' }">
-                    <span class="text-xs font-medium truncate" :style="{ color: row.color.hex }">
-                      {{ row.layout.name }}
-                    </span>
-                    <span v-if="bar.width > 100" class="text-xs opacity-50 whitespace-nowrap" :style="{ color: row.color.hex }">
-                      {{ bar.label }}
-                    </span>
+                    <span class="text-[10px] font-medium truncate" :style="{ color: bar.color.hex }">{{ bar.layoutName }}</span>
+                    <span v-if="bar.width > 80" class="text-[10px] opacity-50 whitespace-nowrap" :style="{ color: bar.color.hex }">{{ bar.label }}</span>
                   </div>
                 </div>
               </div>
@@ -629,21 +453,11 @@ function hideTooltip() {
       </div>
     </div>
 
-    <!-- Tooltip: native popover, top layer -->
-    <div
-      ref="tooltipRef"
-      popover="manual"
-      class="m-0 px-3 py-2 bg-gray-900 text-white rounded-lg shadow-lg pointer-events-none -translate-x-1/2 -translate-y-full"
-      style="max-width: 260px;"
-    >
+    <!-- Tooltip -->
+    <div ref="tooltipRef" popover="manual" class="m-0 px-3 py-2 bg-gray-900 text-white rounded-lg shadow-lg pointer-events-none -translate-x-1/2 -translate-y-full" style="max-width: 260px;">
       <template v-if="tooltipData">
-        <div class="text-xs font-semibold mb-1">{{ tooltipData.name }}</div>
-        <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-gray-300">
-          <span>{{ tooltipData.time }}</span>
-          <span>{{ tooltipData.target }}</span>
-          <span v-if="tooltipData.devices">{{ tooltipData.devices }}</span>
-          <span v-if="!tooltipData.enabled && !tooltipData.isDefault" class="text-amber-300">Disabled</span>
-        </div>
+        <div class="text-xs font-semibold mb-0.5">{{ tooltipData.name }}</div>
+        <div class="text-[10px] text-gray-300">{{ tooltipData.time }}</div>
       </template>
     </div>
   </div>
